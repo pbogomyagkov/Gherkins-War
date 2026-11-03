@@ -624,8 +624,8 @@
     }
 
     function startImmersiveMode() {
-        enterFullscreen();
         enableTilt();
+        enterFullscreen();
         document.removeEventListener('pointerdown', startImmersiveMode);
     }
 
