@@ -107,16 +107,21 @@
         elements.field.style.setProperty('--cell-width', `${100 / game.columns}%`);
         elements.field.style.setProperty('--cell-height', `${100 / game.rows}%`);
 
-        const reservedHeight = 16;
-        const availableHeight = Math.max(100, window.innerHeight - reservedHeight);
-        const availableWidth = Math.max(100, window.innerWidth - 16);
-        const tileSize = Math.floor(Math.min(
-            availableWidth / game.columns,
-            availableHeight / game.rows,
-        ));
+        const shortSide = Math.min(window.innerWidth, window.innerHeight);
+        const longSide = Math.max(window.innerWidth, window.innerHeight);
+        const tileSize = Math.max(1, Math.floor(Math.min(
+            (shortSide - 16) / 8,
+            (longSide - 16) / 16,
+        ) - 2));
+        const fieldWidth = tileSize * game.columns;
+        const fieldHeight = tileSize * game.rows;
+        const topGap = isLandscape
+            ? Math.max(0, (window.innerHeight - fieldHeight) / 2)
+            : Math.max(0, (window.innerWidth - fieldWidth) / 2);
 
-        elements.field.style.width = `${tileSize * game.columns}px`;
-        elements.field.style.height = `${tileSize * game.rows}px`;
+        elements.field.style.width = `${fieldWidth}px`;
+        elements.field.style.height = `${fieldHeight}px`;
+        elements.field.style.marginTop = `${topGap}px`;
     }
 
     function generateLevel() {

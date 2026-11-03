@@ -50,7 +50,7 @@ button {
     inset: 0;
     display: grid;
     place-items: start center;
-    padding: 8px 8px 0;
+    padding: 0 8px;
 }
 
 .field {
@@ -160,7 +160,7 @@ button {
 .cell.boss-beam::before {
     position: absolute;
     z-index: 4;
-    inset: 39% 0;
+    inset: 42% 0 50%;
     background: rgba(198, 243, 107, .8);
     box-shadow: 0 0 14px rgba(198, 243, 107, 1);
     content: "";
