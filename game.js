@@ -57,6 +57,7 @@
     const game = {
         columns: 8,
         rows: 16,
+        screenAngle: 0,
         walls: [],
         waterTiles: new Set(),
         waterRotations: new Map(),
@@ -528,22 +529,25 @@
     function handleResize() {
         const previousColumns = game.columns;
         const previousRows = game.rows;
+        const previousAngle = game.screenAngle;
+        game.screenAngle = getScreenAngle();
         chooseDimensions();
 
         if (game.columns !== previousColumns || game.rows !== previousRows) {
-            rotateLevelClockwise(previousColumns, previousRows);
+            const angleChange = (game.screenAngle - previousAngle + 360) % 360;
+            const clockwise = angleChange === 90 || angleChange === 0;
+            rotateLevel(previousColumns, previousRows, clockwise);
             renderLevel();
         }
     }
 
-    function rotateLevelClockwise(previousColumns, previousRows) {
+    function rotateLevel(previousColumns, previousRows, clockwise) {
         const rotatedWalls = Array.from({ length: previousColumns }, () =>
             Array(previousRows),
         );
-        const rotatePosition = ({ x, y }) => ({
-            x: previousRows - 1 - y,
-            y: x,
-        });
+        const rotatePosition = clockwise
+            ? ({ x, y }) => ({ x: previousRows - 1 - y, y: x })
+            : ({ x, y }) => ({ x: y, y: previousColumns - 1 - x });
 
         for (let y = 0; y < previousRows; y++) {
             for (let x = 0; x < previousColumns; x++) {
@@ -555,11 +559,11 @@
         game.walls = rotatedWalls;
         game.player = {
             ...rotatePosition(game.player),
-            direction: rotateDirection(game.player.direction),
+            direction: rotateDirection(game.player.direction, clockwise),
         };
         game.boss = {
             ...rotatePosition(game.boss),
-            direction: rotateDirection(game.boss.direction),
+            direction: rotateDirection(game.boss.direction, clockwise),
         };
         game.waterTiles = new Set(
             [...game.waterTiles].map((key) => {
@@ -572,13 +576,24 @@
             [...game.waterRotations].map(([key, rotation]) => {
                 const [x, y] = key.split(',').map(Number);
                 const rotated = rotatePosition({ x, y });
-                return [tileKey(rotated.x, rotated.y), (rotation + 90) % 360];
+                const rotationChange = clockwise ? 90 : -90;
+                return [
+                    tileKey(rotated.x, rotated.y),
+                    (rotation + rotationChange + 360) % 360,
+                ];
             }),
         );
     }
 
-    function rotateDirection(direction) {
-        return { u: 'r', r: 'd', d: 'l', l: 'u' }[direction];
+    function rotateDirection(direction, clockwise) {
+        const clockwiseDirections = { u: 'r', r: 'd', d: 'l', l: 'u' };
+        const counterclockwiseDirections = { u: 'l', l: 'd', d: 'r', r: 'u' };
+        return (clockwise ? clockwiseDirections : counterclockwiseDirections)[direction];
+    }
+
+    function getScreenAngle() {
+        const angle = screen.orientation?.angle ?? window.orientation ?? 0;
+        return (angle + 360) % 360;
     }
 
     function enterFullscreen() {
@@ -661,6 +676,7 @@
 
     function start() {
         bindControls();
+        game.screenAngle = getScreenAngle();
         chooseDimensions();
         generateLevel();
         renderLevel();

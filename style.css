@@ -307,29 +307,6 @@ button {
     touch-action: manipulation;
 }
 
-.fire-button::before,
-.fire-button::after {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    border: 2px solid currentColor;
-    border-radius: 50%;
-    content: "";
-}
-
-.fire-button::before {
-    width: 24px;
-    height: 24px;
-    transform: translate(-50%, -50%);
-}
-
-.fire-button::after {
-    width: 7px;
-    height: 7px;
-    transform: translate(-50%, -50%);
-    background: currentColor;
-}
-
 .fire-button:active {
     transform: translate(-50%, -50%) scale(.91);
     filter: brightness(1.15);
