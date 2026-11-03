@@ -6,7 +6,7 @@
     const WALL_PROBABILITY = 0.24;
     const WATER_SPEED_FACTOR = 0.67;
     const BOSS_STEP_MS = 750;
-    const JOYSTICK_STEP_MS = BOSS_STEP_MS;
+    const JOYSTICK_STEP_MS = 320;
     const BOSS_FIRE_CHANCE = 0.25;
     const PLAYER_SHOT_RANGE = 4;
     const PLAYER_SHOT_STEP_MS = 100;
@@ -314,7 +314,7 @@
             game.player.x = nextX;
             game.player.y = nextY;
             rotateWaterAt(nextX, nextY);
-            game.playerSprite.style.transitionDuration = startsOnWater ? '225ms' : '150ms';
+            game.playerSprite.style.transitionDuration = startsOnWater ? '390ms' : '260ms';
         }
         updateEntities();
     }
@@ -490,11 +490,11 @@
             return;
         }
 
-        const startsMoving = game.joystickDirection === null;
-        clearJoystickMove();
+        const directionChanged = direction !== game.joystickDirection;
+        if (directionChanged) clearJoystickMove();
         game.joystickDirection = direction;
-        if (startsMoving) movePlayer(direction);
-        scheduleJoystickMove();
+        if (directionChanged) movePlayer(direction);
+        if (directionChanged || game.moveTimer === null) scheduleJoystickMove();
     }
 
     function clearJoystickMove() {
