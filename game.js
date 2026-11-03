@@ -52,6 +52,9 @@
         stickKnob: document.querySelector('#stick-knob'),
         aimButtons: [...document.querySelectorAll('.aim-direction')],
         fireButton: document.querySelector('#fire-button'),
+        debugStatus: document.querySelector('#debug-status'),
+        motionPrompt: document.querySelector('#motion-prompt'),
+        motionEnable: document.querySelector('#motion-enable'),
     };
 
     const game = {
@@ -534,19 +537,22 @@
         game.screenAngle = getScreenAngle();
         chooseDimensions();
 
-        if (game.columns !== previousColumns || game.rows !== previousRows) {
-            const clockwise = isClockwiseRotation(previousAngle, game.screenAngle);
-            rotateLevel(previousColumns, previousRows, clockwise);
+        if (game.columns !== previousColumns
+            || game.rows !== previousRows
+            || game.screenAngle !== previousAngle) {
+            const rotationTurns = getRotationTurns(previousAngle, game.screenAngle);
+            rotateLevel(previousColumns, previousRows, rotationTurns);
             renderLevel();
         }
+        updateDebugStatus();
     }
 
-    function isClockwiseRotation(previousAngle, currentAngle) {
+    function getRotationTurns(previousAngle, currentAngle) {
         const angleChange = (currentAngle - previousAngle + 360) % 360;
-        if (angleChange === 90) return false;
-        if (angleChange === 270) return true;
-
-        return screen.orientation?.type === 'landscape-secondary';
+        if (angleChange === 90) return 1;
+        if (angleChange === 270) return -1;
+        if (angleChange === 180) return 2;
+        return screen.orientation?.type === 'landscape-primary' ? 1 : -1;
     }
 
     function scheduleResize() {
@@ -554,13 +560,18 @@
         game.resizeTimer = setTimeout(handleResize, 250);
     }
 
-    function rotateLevel(previousColumns, previousRows, clockwise) {
-        const rotatedWalls = Array.from({ length: previousColumns }, () =>
-            Array(previousRows),
+    function rotateLevel(previousColumns, previousRows, rotationTurns) {
+        const quarterTurn = Math.abs(rotationTurns) === 1;
+        const rotatedColumns = quarterTurn ? previousRows : previousColumns;
+        const rotatedRows = quarterTurn ? previousColumns : previousRows;
+        const rotatedWalls = Array.from({ length: rotatedRows }, () =>
+            Array(rotatedColumns),
         );
-        const rotatePosition = clockwise
-            ? ({ x, y }) => ({ x: previousRows - 1 - y, y: x })
-            : ({ x, y }) => ({ x: y, y: previousColumns - 1 - x });
+        const rotatePosition = ({ x, y }) => {
+            if (rotationTurns === 1) return { x: previousRows - 1 - y, y: x };
+            if (rotationTurns === -1) return { x: y, y: previousColumns - 1 - x };
+            return { x: previousColumns - 1 - x, y: previousRows - 1 - y };
+        };
 
         for (let y = 0; y < previousRows; y++) {
             for (let x = 0; x < previousColumns; x++) {
@@ -589,19 +600,18 @@
             [...game.waterRotations].map(([key, rotation]) => {
                 const [x, y] = key.split(',').map(Number);
                 const rotated = rotatePosition({ x, y });
-                const rotationChange = clockwise ? 90 : -90;
                 return [
                     tileKey(rotated.x, rotated.y),
-                    (rotation + rotationChange + 360) % 360,
+                    (rotation + rotationTurns * 90 + 360) % 360,
                 ];
             }),
         );
     }
 
-    function rotateDirection(direction, clockwise) {
-        const clockwiseDirections = { u: 'r', r: 'd', d: 'l', l: 'u' };
-        const counterclockwiseDirections = { u: 'l', l: 'd', d: 'r', r: 'u' };
-        return (clockwise ? clockwiseDirections : counterclockwiseDirections)[direction];
+    function rotateDirection(direction, rotationTurns) {
+        const directions = ['u', 'r', 'd', 'l'];
+        const directionIndex = directions.indexOf(direction);
+        return directions[(directionIndex + rotationTurns + directions.length) % directions.length];
     }
 
     function getScreenAngle() {
@@ -619,6 +629,27 @@
         return (angle + 360) % 360;
     }
 
+    function getOrientationLabel() {
+        const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+        if (!isLandscape) return 'Portrait';
+
+        const type = screen.orientation?.type;
+        if (type === 'landscape-primary') return 'Landscape right';
+        if (type === 'landscape-secondary') return 'Landscape left';
+        if (game.screenAngle === 90) return 'Landscape right';
+        if (game.screenAngle === 270) return 'Landscape left';
+        return 'Landscape (direction unknown)';
+    }
+
+    function updateDebugStatus(tiltLabel = 'Tilt: waiting for motion') {
+        elements.debugStatus.value = `${getOrientationLabel()} | ${tiltLabel}`;
+    }
+
+    function isMobileDevice() {
+        return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+            || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    }
+
     function enterFullscreen() {
         const requestFullscreen = document.documentElement.requestFullscreen;
         if (!requestFullscreen || document.fullscreenElement) return;
@@ -627,42 +658,59 @@
             .catch((error) => console.info('Fullscreen is unavailable:', error));
     }
 
-    function enableTilt() {
+    async function enableTilt() {
         const orientation = window.DeviceOrientationEvent;
-        if (!orientation) return;
-
-        const listenForTilt = () => window.addEventListener('deviceorientation', handleTilt);
-        if (typeof orientation.requestPermission !== 'function') {
-            listenForTilt();
+        if (!orientation) {
+            updateDebugStatus('Tilt: unavailable');
+            elements.motionPrompt.hidden = true;
             return;
         }
 
-        orientation.requestPermission().then((permission) => {
-            if (permission === 'granted') listenForTilt();
-        }).catch((error) => console.info('Device tilt is unavailable:', error));
+        elements.motionEnable.disabled = true;
+        try {
+            if (typeof orientation.requestPermission === 'function') {
+                const permission = await orientation.requestPermission();
+                if (permission !== 'granted') {
+                    updateDebugStatus('Tilt: permission denied');
+                    elements.motionPrompt.hidden = true;
+                    return;
+                }
+            }
+
+            window.addEventListener('deviceorientation', handleTilt);
+            updateDebugStatus('Tilt: waiting for sensor');
+        } catch (error) {
+            updateDebugStatus('Tilt: permission unavailable');
+            console.info('Device tilt is unavailable:', error);
+        } finally {
+            elements.motionEnable.disabled = false;
+            elements.motionPrompt.hidden = true;
+        }
     }
 
     function handleTilt(event) {
-        if (event.gamma === null) return;
+        if (event.gamma === null) {
+            updateDebugStatus('Tilt: waiting for sensor');
+            return;
+        }
 
         const screenAngle = screen.orientation?.angle ?? window.orientation ?? 0;
         const angle = screenAngle * Math.PI / 180;
         const horizontalTilt = event.gamma * Math.cos(angle) - (event.beta ?? 0) * Math.sin(angle);
         const tilt = Math.max(-MAX_TILT_ANGLE, Math.min(MAX_TILT_ANGLE, horizontalTilt));
-        const strength = Math.abs(tilt);
-        const borderWidth = strength < MIN_TILT_ANGLE
-            ? 0
-            : 3 + Math.round(
-                (strength - MIN_TILT_ANGLE) / (MAX_TILT_ANGLE - MIN_TILT_ANGLE) * 5,
-            );
 
         elements.field.classList.toggle('tilt-left', tilt < -MIN_TILT_ANGLE);
         elements.field.classList.toggle('tilt-right', tilt > MIN_TILT_ANGLE);
-        elements.field.style.setProperty('--tilt-border-width', `${borderWidth}px`);
+        const tiltLabel = tilt < -MIN_TILT_ANGLE
+            ? 'Tilt: left'
+            : tilt > MIN_TILT_ANGLE
+                ? 'Tilt: right'
+                : 'Tilt: neutral';
+        updateDebugStatus(tiltLabel);
     }
 
     function startImmersiveMode() {
-        enableTilt();
+        if (!elements.motionPrompt.hidden) return;
         enterFullscreen();
         document.removeEventListener('pointerdown', startImmersiveMode);
     }
@@ -692,6 +740,11 @@
             event.preventDefault();
             fire();
         });
+        elements.motionEnable.addEventListener('click', () => {
+            void enableTilt();
+            enterFullscreen();
+            document.removeEventListener('pointerdown', startImmersiveMode);
+        });
         document.addEventListener('keydown', handleKeyDown);
         document.addEventListener('pointerdown', startImmersiveMode);
         window.addEventListener('resize', scheduleResize);
@@ -705,6 +758,13 @@
         chooseDimensions();
         generateLevel();
         renderLevel();
+        updateDebugStatus();
+        if (isMobileDevice() && window.DeviceOrientationEvent) {
+            elements.motionPrompt.hidden = false;
+            elements.motionEnable.focus();
+        } else if (!window.DeviceOrientationEvent) {
+            updateDebugStatus('Tilt: unavailable');
+        }
         setInterval(moveBoss, BOSS_STEP_MS);
     }
 
