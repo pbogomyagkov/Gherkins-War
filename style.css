@@ -102,7 +102,7 @@ button {
 .wall-sprite::after {
     position: absolute;
     inset: 0;
-    clip-path: inset(18% 0 22%);
+    clip-path: inset(0 0 22%);
     content: "";
     pointer-events: none;
     -webkit-mask-image: url("assets/floor-up-s-b.png");
@@ -327,6 +327,7 @@ button {
 }
 
 .debug-status {
+    display: none;
     position: absolute;
     z-index: 5;
     top: max(8px, env(safe-area-inset-top));

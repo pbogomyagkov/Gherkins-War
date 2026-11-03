@@ -60,14 +60,12 @@
     const game = {
         columns: 8,
         rows: 16,
-        screenAngle: 0,
         walls: [],
         waterTiles: new Set(),
         waterRotations: new Map(),
         cells: [],
         player: { x: 0, y: 0, direction: 'u' },
         boss: { x: 0, y: 0, direction: 'd' },
-        screenType: null,
         isJoystickHeld: false,
         joystickDirection: null,
         shots: { player: null, boss: null },
@@ -540,31 +538,14 @@
     function handleResize() {
         const previousColumns = game.columns;
         const previousRows = game.rows;
-        const previousAngle = game.screenAngle;
-        const previousType = game.screenType;
-        game.screenAngle = getScreenAngle();
-        game.screenType = screen.orientation?.type ?? null;
         chooseDimensions();
 
-        if (game.columns !== previousColumns
-            || game.rows !== previousRows
-            || game.screenAngle !== previousAngle
-            || game.screenType !== previousType) {
-            const rotationTurns = getRotationTurns(previousAngle, game.screenAngle);
-            if (rotationTurns !== 0) {
-                rotateLevel(previousColumns, previousRows, rotationTurns);
-                renderLevel();
-            }
+        if (game.columns !== previousColumns || game.rows !== previousRows) {
+            const rotationTurns = game.columns > previousColumns ? 1 : -1;
+            rotateLevel(previousColumns, previousRows, rotationTurns);
+            renderLevel();
         }
         updateDebugStatus();
-    }
-
-    function getRotationTurns(previousAngle, currentAngle) {
-        const angleChange = (currentAngle - previousAngle + 360) % 360;
-        if (angleChange === 90) return -1;
-        if (angleChange === 270) return 1;
-        if (angleChange === 180) return 2;
-        return 0;
     }
 
     function scheduleResize() {
@@ -626,31 +607,11 @@
         return directions[(directionIndex + rotationTurns + directions.length) % directions.length];
     }
 
-    function getScreenAngle() {
-        const orientationAngles = {
-            'portrait-primary': 0,
-            'landscape-primary': 90,
-            'portrait-secondary': 180,
-            'landscape-secondary': 270,
-        };
-        const type = screen.orientation?.type;
-        const angle = orientationAngles[type]
-            ?? (typeof window.orientation === 'number'
-                ? window.orientation
-                : screen.orientation?.angle ?? 0);
-        return (angle + 360) % 360;
-    }
-
     function getOrientationLabel() {
         const isLandscape = window.matchMedia('(orientation: landscape)').matches;
         if (!isLandscape) return 'Portrait';
 
-        const type = screen.orientation?.type;
-        if (type === 'landscape-primary') return 'Landscape left';
-        if (type === 'landscape-secondary') return 'Landscape right';
-        if (game.screenAngle === 90) return 'Landscape left';
-        if (game.screenAngle === 270) return 'Landscape right';
-        return 'Landscape (direction unknown)';
+        return 'Landscape';
     }
 
     function updateDebugStatus(tiltLabel = 'Tilt: waiting for motion') {
@@ -772,8 +733,6 @@
 
     function start() {
         bindControls();
-        game.screenAngle = getScreenAngle();
-        game.screenType = screen.orientation?.type ?? null;
         chooseDimensions();
         generateLevel();
         renderLevel();
