@@ -535,16 +535,23 @@
         chooseDimensions();
 
         if (game.columns !== previousColumns || game.rows !== previousRows) {
-            const angleChange = (game.screenAngle - previousAngle + 360) % 360;
-            const clockwise = angleChange === 270 || angleChange === 0;
+            const clockwise = isClockwiseRotation(previousAngle, game.screenAngle);
             rotateLevel(previousColumns, previousRows, clockwise);
             renderLevel();
         }
     }
 
+    function isClockwiseRotation(previousAngle, currentAngle) {
+        const angleChange = (currentAngle - previousAngle + 360) % 360;
+        if (angleChange === 90) return false;
+        if (angleChange === 270) return true;
+
+        return screen.orientation?.type === 'landscape-secondary';
+    }
+
     function scheduleResize() {
         clearTimeout(game.resizeTimer);
-        game.resizeTimer = setTimeout(handleResize, 100);
+        game.resizeTimer = setTimeout(handleResize, 250);
     }
 
     function rotateLevel(previousColumns, previousRows, clockwise) {
@@ -598,9 +605,17 @@
     }
 
     function getScreenAngle() {
-        const angle = typeof window.orientation === 'number'
-            ? window.orientation
-            : screen.orientation?.angle ?? 0;
+        const orientationAngles = {
+            'portrait-primary': 0,
+            'landscape-primary': 90,
+            'portrait-secondary': 180,
+            'landscape-secondary': 270,
+        };
+        const type = screen.orientation?.type;
+        const angle = orientationAngles[type]
+            ?? (typeof window.orientation === 'number'
+                ? window.orientation
+                : screen.orientation?.angle ?? 0);
         return (angle + 360) % 360;
     }
 
@@ -681,6 +696,7 @@
         document.addEventListener('pointerdown', startImmersiveMode);
         window.addEventListener('resize', scheduleResize);
         window.addEventListener('orientationchange', scheduleResize);
+        screen.orientation?.addEventListener('change', scheduleResize);
     }
 
     function start() {
