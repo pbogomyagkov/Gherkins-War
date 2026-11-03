@@ -6,12 +6,13 @@
     font-synthesis: none;
     text-rendering: optimizeLegibility;
     --acid: #c6f36b;
-    --muted: #9da995;
 }
 
 * {
     box-sizing: border-box;
     -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
 }
 
 html,
@@ -44,81 +45,12 @@ button {
     overflow: hidden;
 }
 
-.topbar {
-    position: absolute;
-    z-index: 5;
-    top: max(12px, env(safe-area-inset-top));
-    inset-inline: 18px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    pointer-events: none;
-}
-
-.brand {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.brand-mark {
-    display: grid;
-    width: 38px;
-    aspect-ratio: 1;
-    place-items: center;
-    border: 1px solid rgba(198, 243, 107, .3);
-    border-radius: 12px;
-    background: rgba(31, 46, 31, .88);
-    font-size: 20px;
-}
-
-.brand h1,
-.brand p {
-    margin: 0;
-}
-
-.brand h1 {
-    font-size: 15px;
-    font-weight: 750;
-    letter-spacing: .04em;
-}
-
-.brand p {
-    margin-top: 2px;
-    color: var(--muted);
-    font-size: 10px;
-    letter-spacing: .12em;
-    text-transform: uppercase;
-}
-
-.field-label {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 11px;
-    border: 1px solid rgba(198, 243, 107, .18);
-    border-radius: 20px;
-    background: rgba(24, 35, 25, .86);
-    color: #dce8c8;
-    font-size: 11px;
-    font-variant-numeric: tabular-nums;
-    letter-spacing: .08em;
-}
-
-.live-dot {
-    width: 6px;
-    aspect-ratio: 1;
-    border-radius: 50%;
-    background: var(--acid);
-    box-shadow: 0 0 9px rgba(198, 243, 107, .8);
-}
-
 .arena {
     position: absolute;
     inset: 0;
     display: grid;
     place-items: center;
-    padding: 48px 8px 8px;
+    padding: 8px;
 }
 
 .field {
@@ -255,13 +187,6 @@ button {
     pointer-events: auto;
 }
 
-.control-caption {
-    color: rgba(221, 231, 208, .6);
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: .18em;
-}
-
 .joystick,
 .aim-pad {
     position: relative;
@@ -326,11 +251,19 @@ button {
     padding-top: 12px;
 }
 
+.aim-up::before {
+    content: "▲";
+}
+
 .aim-right {
     clip-path: polygon(50% 50%, 85% 15%, 95% 28%, 100% 50%, 95% 72%, 85% 85%);
     justify-content: flex-end;
     align-items: center;
     padding-right: 12px;
+}
+
+.aim-right::before {
+    content: "▶";
 }
 
 .aim-down {
@@ -340,11 +273,19 @@ button {
     padding-bottom: 12px;
 }
 
+.aim-down::before {
+    content: "▼";
+}
+
 .aim-left {
     clip-path: polygon(50% 50%, 15% 85%, 5% 72%, 0 50%, 5% 28%, 15% 15%);
     justify-content: flex-start;
     align-items: center;
     padding-left: 12px;
+}
+
+.aim-left::before {
+    content: "◀";
 }
 
 .fire-button {
@@ -366,25 +307,35 @@ button {
     touch-action: manipulation;
 }
 
+.fire-button::before,
+.fire-button::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    border: 2px solid currentColor;
+    border-radius: 50%;
+    content: "";
+}
+
+.fire-button::before {
+    width: 24px;
+    height: 24px;
+    transform: translate(-50%, -50%);
+}
+
+.fire-button::after {
+    width: 7px;
+    height: 7px;
+    transform: translate(-50%, -50%);
+    background: currentColor;
+}
+
 .fire-button:active {
     transform: translate(-50%, -50%) scale(.91);
     filter: brightness(1.15);
 }
 
 @media (orientation: landscape) {
-    .topbar {
-        top: max(10px, env(safe-area-inset-top));
-        inset-inline: 16px;
-    }
-
-    .brand-mark {
-        width: 32px;
-    }
-
-    .arena {
-        padding: 42px 8px 8px;
-    }
-
     .controls {
         right: max(18px, env(safe-area-inset-right));
         bottom: max(12px, env(safe-area-inset-bottom));
@@ -393,21 +344,6 @@ button {
 
     .control-group {
         gap: 4px;
-    }
-
-    .control-caption {
-        font-size: 8px;
-    }
-
-}
-
-@media (orientation: portrait) {
-    .topbar {
-        display: none;
-    }
-
-    .arena {
-        padding: 8px;
     }
 }
 

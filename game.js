@@ -48,7 +48,6 @@
 
     const elements = {
         field: document.querySelector('#field'),
-        fieldSize: document.querySelector('#field-size'),
         joystick: document.querySelector('#joystick'),
         stickKnob: document.querySelector('#stick-knob'),
         aimButtons: [...document.querySelectorAll('.aim-direction')],
@@ -99,7 +98,6 @@
         game.columns = isLandscape ? 16 : 8;
         game.rows = isLandscape ? 8 : 16;
 
-        elements.fieldSize.textContent = `${game.columns} × ${game.rows}`;
         elements.field.style.gridTemplateColumns = `repeat(${game.columns}, minmax(0, 1fr))`;
         elements.field.style.gridTemplateRows = `repeat(${game.rows}, minmax(0, 1fr))`;
         elements.field.style.setProperty('--cell-width', `${100 / game.columns}%`);
@@ -609,12 +607,15 @@
     function handleTilt(event) {
         if (event.gamma === null) return;
 
-        const tilt = Math.max(-MAX_TILT_ANGLE, Math.min(MAX_TILT_ANGLE, event.gamma));
+        const screenAngle = screen.orientation?.angle ?? window.orientation ?? 0;
+        const angle = screenAngle * Math.PI / 180;
+        const horizontalTilt = event.gamma * Math.cos(angle) - (event.beta ?? 0) * Math.sin(angle);
+        const tilt = Math.max(-MAX_TILT_ANGLE, Math.min(MAX_TILT_ANGLE, horizontalTilt));
         const strength = Math.abs(tilt);
         const borderWidth = strength < MIN_TILT_ANGLE
             ? 0
-            : 2 + Math.round(
-                (strength - MIN_TILT_ANGLE) / (MAX_TILT_ANGLE - MIN_TILT_ANGLE) * 4,
+            : 3 + Math.round(
+                (strength - MIN_TILT_ANGLE) / (MAX_TILT_ANGLE - MIN_TILT_ANGLE) * 5,
             );
 
         elements.field.classList.toggle('tilt-left', tilt < -MIN_TILT_ANGLE);
