@@ -399,28 +399,6 @@ button {
         font-size: 8px;
     }
 
-    .joystick,
-    .aim-pad {
-        width: 92px;
-    }
-
-    .stick-ring {
-        inset: 18px;
-    }
-
-    .stick-knob {
-        width: 36px;
-    }
-
-    .aim-direction {
-        width: 30px;
-        height: 27px;
-    }
-
-    .fire-button {
-        width: 39px;
-        font-size: 8px;
-    }
 }
 
 @media (orientation: portrait) {

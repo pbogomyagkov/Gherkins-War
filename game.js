@@ -4,9 +4,9 @@
     const WATER_TILE_COUNT = 4;
     const WATER_ROTATIONS = [0, 90, 180, 270];
     const WALL_PROBABILITY = 0.24;
-    const PLAYER_STEP_MS = 190;
     const WATER_SPEED_FACTOR = 0.67;
     const BOSS_STEP_MS = 750;
+    const JOYSTICK_STEP_MS = BOSS_STEP_MS;
     const BOSS_FIRE_CHANCE = 0.25;
     const PLAYER_SHOT_RANGE = 4;
     const PLAYER_SHOT_STEP_MS = 100;
@@ -65,6 +65,7 @@
         player: { x: 0, y: 0, direction: 'u' },
         boss: { x: 0, y: 0, direction: 'd' },
         isJoystickHeld: false,
+        joystickDirection: null,
         shots: { player: null, boss: null },
         moveTimer: null,
         playerSprite: null,
@@ -124,6 +125,7 @@
         const route = createOpenRoute();
         game.player.x = route[0].x;
         game.player.y = route[0].y;
+        game.player.direction = game.player.x < game.columns / 2 ? 'r' : 'l';
         placeBossAtRouteEnd(route);
         placeWaterTiles();
     }
@@ -446,13 +448,14 @@
 
     function getPlayerMoveDelay() {
         const isOnWater = game.waterTiles.has(tileKey(game.player.x, game.player.y));
-        return isOnWater ? PLAYER_STEP_MS / WATER_SPEED_FACTOR : PLAYER_STEP_MS;
+        return isOnWater ? JOYSTICK_STEP_MS / WATER_SPEED_FACTOR : JOYSTICK_STEP_MS;
     }
 
-    function scheduleJoystickMove(direction) {
+    function scheduleJoystickMove() {
         game.moveTimer = setTimeout(() => {
-            movePlayer(direction);
-            if (game.isJoystickHeld) scheduleJoystickMove(direction);
+            if (!game.isJoystickHeld || !game.joystickDirection) return;
+            movePlayer(game.joystickDirection);
+            scheduleJoystickMove();
         }, getPlayerMoveDelay());
     }
 
@@ -482,13 +485,16 @@
 
         const direction = directionFromVector(x, y);
         if (!direction) {
+            game.joystickDirection = null;
             clearJoystickMove();
             return;
         }
 
-        movePlayer(direction);
+        const startsMoving = game.joystickDirection === null;
         clearJoystickMove();
-        scheduleJoystickMove(direction);
+        game.joystickDirection = direction;
+        if (startsMoving) movePlayer(direction);
+        scheduleJoystickMove();
     }
 
     function clearJoystickMove() {
@@ -498,6 +504,7 @@
 
     function releaseJoystick() {
         game.isJoystickHeld = false;
+        game.joystickDirection = null;
         clearJoystickMove();
         elements.stickKnob.style.transform = 'translate(-50%, -50%)';
     }
@@ -606,8 +613,9 @@
         const strength = Math.abs(tilt);
         const borderWidth = strength < MIN_TILT_ANGLE
             ? 0
-            : 1 + Math.round((strength - MIN_TILT_ANGLE)
-                / (MAX_TILT_ANGLE - MIN_TILT_ANGLE));
+            : 2 + Math.round(
+                (strength - MIN_TILT_ANGLE) / (MAX_TILT_ANGLE - MIN_TILT_ANGLE) * 4,
+            );
 
         elements.field.classList.toggle('tilt-left', tilt < -MIN_TILT_ANGLE);
         elements.field.classList.toggle('tilt-right', tilt > MIN_TILT_ANGLE);
