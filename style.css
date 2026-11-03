@@ -1,0 +1,410 @@
+:root {
+    color-scheme: dark;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #101812;
+    color: #f3f5e8;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    --acid: #c6f36b;
+    --muted: #9da995;
+}
+
+* {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
+}
+
+body {
+    background:
+        radial-gradient(ellipse at 50% 40%, rgba(86, 115, 64, .18), transparent 58%),
+        #101812;
+    touch-action: none;
+    user-select: none;
+}
+
+button {
+    color: inherit;
+    font: inherit;
+}
+
+.game {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    overflow: hidden;
+}
+
+.topbar {
+    position: absolute;
+    z-index: 5;
+    top: max(12px, env(safe-area-inset-top));
+    inset-inline: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    pointer-events: none;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.brand-mark {
+    display: grid;
+    width: 38px;
+    aspect-ratio: 1;
+    place-items: center;
+    border: 1px solid rgba(198, 243, 107, .3);
+    border-radius: 12px;
+    background: rgba(31, 46, 31, .88);
+    font-size: 20px;
+}
+
+.brand h1,
+.brand p {
+    margin: 0;
+}
+
+.brand h1 {
+    font-size: 15px;
+    font-weight: 750;
+    letter-spacing: .04em;
+}
+
+.brand p {
+    margin-top: 2px;
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+}
+
+.field-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 11px;
+    border: 1px solid rgba(198, 243, 107, .18);
+    border-radius: 20px;
+    background: rgba(24, 35, 25, .86);
+    color: #dce8c8;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .08em;
+}
+
+.live-dot {
+    width: 6px;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: var(--acid);
+    box-shadow: 0 0 9px rgba(198, 243, 107, .8);
+}
+
+.arena {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 48px 8px 8px;
+}
+
+.field {
+    position: relative;
+    isolation: isolate;
+    display: grid;
+    border: 1px solid rgba(198, 243, 107, .45);
+    border-radius: 5px;
+    background: #18251a;
+    box-shadow: 0 0 0 5px rgba(198, 243, 107, .035), 0 20px 70px rgba(0, 0, 0, .4);
+    touch-action: none;
+}
+
+.cell {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    z-index: 0;
+    overflow: hidden;
+    border-right: 1px solid rgba(219, 236, 195, .085);
+    border-bottom: 1px solid rgba(219, 236, 195, .085);
+    background-color: #27d532;
+    /* Each square shows only the upper 60px of the 60x100 floor sprite. */
+    background-image: url("assets/floor-d1.png");
+    background-position: center top;
+    background-size: 100% 166.667%;
+}
+
+.water-sprite {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    transform: rotate(var(--water-rotation, 0deg));
+}
+
+.wall-sprite,
+.water-sprite,
+.boss-sprite {
+    pointer-events: none;
+}
+
+.wall-sprite {
+    position: absolute;
+    background-image: url("assets/floor-up-s-b.png");
+    background-repeat: no-repeat;
+    background-position: center top;
+    background-size: 100% 100%;
+}
+
+.entity-piece {
+    position: absolute;
+    width: var(--cell-width);
+    height: var(--cell-height);
+    pointer-events: none;
+}
+
+.player-piece {
+    background-repeat: no-repeat;
+    background-position: center bottom;
+    background-size: contain;
+}
+
+.boss-piece {
+    height: calc(var(--cell-height) * 1.3);
+}
+
+.boss-sprite {
+    position: absolute;
+    image-rendering: pixelated;
+}
+
+.player-piece,
+.boss-piece {
+    transition: top 150ms linear, left 150ms linear;
+}
+
+.cell.player-beam::before,
+.cell.boss-beam::before {
+    position: absolute;
+    z-index: 4;
+    inset: 39% 0;
+    background: rgba(198, 243, 107, .8);
+    box-shadow: 0 0 14px rgba(198, 243, 107, 1);
+    content: "";
+}
+
+.cell.boss-beam::before {
+    background: #ff9a4a;
+    box-shadow: 0 0 10px rgba(255, 154, 74, .9);
+}
+
+.cell.player-beam-vertical::before,
+.cell.boss-beam-vertical::before {
+    inset: 0 46%;
+}
+
+.controls {
+    position: absolute;
+    z-index: 4;
+    right: max(20px, env(safe-area-inset-right));
+    bottom: max(18px, env(safe-area-inset-bottom));
+    left: max(20px, env(safe-area-inset-left));
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    pointer-events: none;
+}
+
+.control-group {
+    display: grid;
+    justify-items: center;
+    gap: 7px;
+    pointer-events: auto;
+}
+
+.control-caption {
+    color: rgba(221, 231, 208, .6);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .18em;
+}
+
+.joystick,
+.aim-pad {
+    position: relative;
+    width: 112px;
+    aspect-ratio: 1;
+    border: 1px solid rgba(198, 243, 107, .28);
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(55, 74, 47, .8), rgba(24, 35, 25, .94) 67%);
+    box-shadow: inset 0 1px 14px rgba(198, 243, 107, .08), 0 10px 24px rgba(0, 0, 0, .35);
+    touch-action: none;
+}
+
+.stick-ring {
+    position: absolute;
+    inset: 22px;
+    border: 1px dashed rgba(198, 243, 107, .3);
+    border-radius: 50%;
+}
+
+.stick-knob {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 43px;
+    aspect-ratio: 1;
+    transform: translate(-50%, -50%);
+    border: 1px solid rgba(236, 255, 202, .65);
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #e1ff9f, #a5d84b 75%);
+    box-shadow: 0 3px 12px rgba(0, 0, 0, .45), 0 0 15px rgba(198, 243, 107, .24);
+    pointer-events: none;
+}
+
+.aim-pad {
+    border-color: rgba(255, 180, 95, .3);
+    background: radial-gradient(circle, rgba(78, 57, 34, .82), rgba(35, 29, 22, .95) 68%);
+    box-shadow: inset 0 1px 14px rgba(255, 180, 95, .07), 0 10px 24px rgba(0, 0, 0, .35);
+}
+
+.aim-direction {
+    position: absolute;
+    display: grid;
+    width: 35px;
+    height: 32px;
+    padding: 0;
+    place-items: center;
+    border: 0;
+    border-radius: 12px;
+    background: rgba(236, 176, 105, .13);
+    color: #f4c98e;
+    font-size: 12px;
+    touch-action: manipulation;
+}
+
+.aim-direction:active,
+.aim-direction.selected {
+    background: rgba(250, 189, 105, .35);
+    color: #fff1d2;
+}
+
+.aim-up,
+.aim-down {
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.aim-right,
+.aim-left {
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.aim-right {
+    right: 6px;
+}
+
+.aim-left {
+    left: 6px;
+}
+
+.aim-down {
+    top: auto;
+    bottom: 6px;
+}
+
+.fire-button {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 46px;
+    aspect-ratio: 1;
+    transform: translate(-50%, -50%);
+    border: 1px solid rgba(255, 205, 143, .7);
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #ffcf91, #db7835 78%);
+    box-shadow: 0 0 17px rgba(241, 150, 73, .24);
+    color: #25180e;
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: .04em;
+    touch-action: manipulation;
+}
+
+.fire-button:active {
+    transform: translate(-50%, -50%) scale(.91);
+    filter: brightness(1.15);
+}
+
+@media (orientation: landscape) {
+    .topbar {
+        top: max(10px, env(safe-area-inset-top));
+        inset-inline: 16px;
+    }
+
+    .brand-mark {
+        width: 32px;
+    }
+
+    .arena {
+        padding: 42px 8px 8px;
+    }
+
+    .controls {
+        right: max(18px, env(safe-area-inset-right));
+        bottom: max(12px, env(safe-area-inset-bottom));
+        left: max(18px, env(safe-area-inset-left));
+    }
+
+    .control-group {
+        gap: 4px;
+    }
+
+    .control-caption {
+        font-size: 8px;
+    }
+
+    .joystick,
+    .aim-pad {
+        width: 92px;
+    }
+
+    .stick-ring {
+        inset: 18px;
+    }
+
+    .stick-knob {
+        width: 36px;
+    }
+
+    .aim-direction {
+        width: 30px;
+        height: 27px;
+    }
+
+    .fire-button {
+        width: 39px;
+        font-size: 8px;
+    }
+}
+
+@media (max-height: 430px) and (orientation: landscape) {
+    .field {
+        transform: translateY(-2px);
+    }
+}
