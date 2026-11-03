@@ -536,7 +536,7 @@
 
         if (game.columns !== previousColumns || game.rows !== previousRows) {
             const angleChange = (game.screenAngle - previousAngle + 360) % 360;
-            const clockwise = angleChange === 90 || angleChange === 0;
+            const clockwise = angleChange === 270 || angleChange === 0;
             rotateLevel(previousColumns, previousRows, clockwise);
             renderLevel();
         }
