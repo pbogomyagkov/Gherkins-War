@@ -68,6 +68,7 @@
         joystickDirection: null,
         shots: { player: null, boss: null },
         moveTimer: null,
+        resizeTimer: null,
         playerSprite: null,
         bossPiece: null,
         bossSprite: null,
@@ -541,6 +542,11 @@
         }
     }
 
+    function scheduleResize() {
+        clearTimeout(game.resizeTimer);
+        game.resizeTimer = setTimeout(handleResize, 100);
+    }
+
     function rotateLevel(previousColumns, previousRows, clockwise) {
         const rotatedWalls = Array.from({ length: previousColumns }, () =>
             Array(previousRows),
@@ -592,7 +598,9 @@
     }
 
     function getScreenAngle() {
-        const angle = screen.orientation?.angle ?? window.orientation ?? 0;
+        const angle = typeof window.orientation === 'number'
+            ? window.orientation
+            : screen.orientation?.angle ?? 0;
         return (angle + 360) % 360;
     }
 
@@ -671,7 +679,8 @@
         });
         document.addEventListener('keydown', handleKeyDown);
         document.addEventListener('pointerdown', startImmersiveMode);
-        window.addEventListener('resize', handleResize);
+        window.addEventListener('resize', scheduleResize);
+        window.addEventListener('orientationchange', scheduleResize);
     }
 
     function start() {
