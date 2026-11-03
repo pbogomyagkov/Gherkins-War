@@ -122,6 +122,7 @@ button {
 }
 
 .field {
+    --tilt-border-width: 0px;
     position: relative;
     isolation: isolate;
     display: grid;
@@ -145,6 +146,25 @@ button {
     background-image: url("assets/floor-d1.png");
     background-position: center top;
     background-size: 100% 166.667%;
+}
+
+.cell::after {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 1;
+    width: var(--tilt-border-width);
+    background: #8a8a8a;
+    content: "";
+    pointer-events: none;
+}
+
+.field.tilt-left .cell::after {
+    left: 0;
+}
+
+.field.tilt-right .cell::after {
+    right: 0;
 }
 
 .water-sprite {
@@ -400,6 +420,16 @@ button {
     .fire-button {
         width: 39px;
         font-size: 8px;
+    }
+}
+
+@media (orientation: portrait) {
+    .topbar {
+        display: none;
+    }
+
+    .arena {
+        padding: 8px;
     }
 }
 

@@ -16,6 +16,8 @@
     const SHOT_FADE_MS = 120;
     const JOYSTICK_DEADZONE = 12;
     const JOYSTICK_REACH = 0.28;
+    const MAX_TILT_ANGLE = 30;
+    const MIN_TILT_ANGLE = 3;
 
     const DIRECTIONS = {
         u: { x: 0, y: -1 },
@@ -102,7 +104,7 @@
         elements.field.style.setProperty('--cell-width', `${100 / game.columns}%`);
         elements.field.style.setProperty('--cell-height', `${100 / game.rows}%`);
 
-        const reservedHeight = isLandscape ? 54 : 78;
+        const reservedHeight = isLandscape ? 54 : 16;
         const availableHeight = Math.max(100, window.innerHeight - reservedHeight);
         const availableWidth = Math.max(100, window.innerWidth - 16);
         const tileSize = Math.floor(Math.min(
@@ -574,6 +576,50 @@
         return { u: 'r', r: 'd', d: 'l', l: 'u' }[direction];
     }
 
+    function enterFullscreen() {
+        const requestFullscreen = document.documentElement.requestFullscreen;
+        if (!requestFullscreen || document.fullscreenElement) return;
+
+        requestFullscreen.call(document.documentElement)
+            .catch((error) => console.info('Fullscreen is unavailable:', error));
+    }
+
+    function enableTilt() {
+        const orientation = window.DeviceOrientationEvent;
+        if (!orientation) return;
+
+        const listenForTilt = () => window.addEventListener('deviceorientation', handleTilt);
+        if (typeof orientation.requestPermission !== 'function') {
+            listenForTilt();
+            return;
+        }
+
+        orientation.requestPermission().then((permission) => {
+            if (permission === 'granted') listenForTilt();
+        }).catch((error) => console.info('Device tilt is unavailable:', error));
+    }
+
+    function handleTilt(event) {
+        if (event.gamma === null) return;
+
+        const tilt = Math.max(-MAX_TILT_ANGLE, Math.min(MAX_TILT_ANGLE, event.gamma));
+        const strength = Math.abs(tilt);
+        const borderWidth = strength < MIN_TILT_ANGLE
+            ? 0
+            : 1 + Math.round((strength - MIN_TILT_ANGLE)
+                / (MAX_TILT_ANGLE - MIN_TILT_ANGLE));
+
+        elements.field.classList.toggle('tilt-left', tilt < -MIN_TILT_ANGLE);
+        elements.field.classList.toggle('tilt-right', tilt > MIN_TILT_ANGLE);
+        elements.field.style.setProperty('--tilt-border-width', `${borderWidth}px`);
+    }
+
+    function startImmersiveMode() {
+        enterFullscreen();
+        enableTilt();
+        document.removeEventListener('pointerdown', startImmersiveMode);
+    }
+
     function bindControls() {
         elements.joystick.addEventListener('pointerdown', (event) => {
             event.preventDefault();
@@ -600,6 +646,7 @@
             fire();
         });
         document.addEventListener('keydown', handleKeyDown);
+        document.addEventListener('pointerdown', startImmersiveMode);
         window.addEventListener('resize', handleResize);
     }
 
