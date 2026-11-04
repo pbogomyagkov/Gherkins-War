@@ -72,6 +72,7 @@
         player: { x: 0, y: 0, direction: 'u' },
         boss: { x: 0, y: 0, direction: 'd' },
         isJoystickHeld: false,
+        lockedDirection: null,
         isPlayerTeleporting: false,
         isBossTeleporting: false,
         playerPortalLock: null,
@@ -388,7 +389,9 @@
         updateBossSprite();
 
         for (const button of elements.aimButtons) {
-            button.classList.toggle('selected', button.dataset.direction === game.player.direction);
+            const isSelected = button.dataset.direction === game.lockedDirection;
+            button.classList.toggle('selected', isSelected);
+            button.setAttribute('aria-pressed', String(isSelected));
         }
     }
 
@@ -407,10 +410,19 @@
         updateEntities();
     }
 
+    function toggleAimDirection(direction) {
+        if (!DIRECTIONS[direction]) return;
+        game.lockedDirection = game.lockedDirection === direction ? null : direction;
+        setPlayerDirection(direction);
+    }
+
     // Character movement and portal travel.
     function movePlayer(direction) {
         const vector = DIRECTIONS[direction];
         if (!vector || game.isPlayerTeleporting) return;
+        if (!game.lockedDirection && game.player.direction !== direction) {
+            setPlayerDirection(direction);
+        }
 
         const startsOnWater = game.waterTiles.has(tileKey(game.player.x, game.player.y));
         const nextX = game.player.x + vector.x;
@@ -799,7 +811,9 @@
         const directionChanged = direction !== game.joystickDirection;
         if (directionChanged) clearJoystickMove();
         game.joystickDirection = direction;
-        if (directionChanged) movePlayer(direction);
+        if (directionChanged) {
+            movePlayer(direction);
+        }
         if (directionChanged || game.moveTimer === null) scheduleJoystickMove();
     }
 
@@ -822,7 +836,7 @@
         if (moveDirection || turnDirection) {
             event.preventDefault();
             if (moveDirection) movePlayer(moveDirection);
-            else setPlayerDirection(turnDirection);
+            else toggleAimDirection(turnDirection);
         } else if (event.code === 'Space') {
             event.preventDefault();
             firePlayer();
@@ -873,6 +887,9 @@
             ...rotatePosition(game.player),
             direction: rotateDirection(game.player.direction, rotationTurns),
         };
+        if (game.lockedDirection) {
+            game.lockedDirection = rotateDirection(game.lockedDirection, rotationTurns);
+        }
         game.boss = {
             ...rotatePosition(game.boss),
             direction: rotateDirection(game.boss.direction, rotationTurns),
@@ -1024,9 +1041,8 @@
         elements.joystick.addEventListener('lostpointercapture', releaseJoystick);
 
         for (const button of elements.aimButtons) {
-            button.addEventListener('pointerdown', (event) => {
-                event.preventDefault();
-                setPlayerDirection(button.dataset.direction);
+            button.addEventListener('click', () => {
+                toggleAimDirection(button.dataset.direction);
             });
         }
 
