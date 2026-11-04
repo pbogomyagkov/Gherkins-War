@@ -99,6 +99,79 @@ button {
     background-size: 100% 100%;
 }
 
+.wall-portal {
+    position: absolute;
+    z-index: 1;
+    background: radial-gradient(
+        ellipse,
+        rgba(255, 255, 255, .82) 0%,
+        rgba(255, 255, 255, .42) 48%,
+        rgba(255, 255, 255, .12) 76%,
+        transparent 100%
+    );
+    pointer-events: none;
+}
+
+.wall-portal-front {
+    top: calc(58% + 2px);
+    left: 0;
+    width: 100%;
+    height: 20%;
+    border-radius: 50%;
+    background: radial-gradient(
+        ellipse,
+        rgba(255, 255, 255, .72) 0%,
+        rgba(255, 255, 255, .5) 45%,
+        rgba(255, 255, 255, .12) 100%
+    );
+}
+
+.wall-portal-left,
+.wall-portal-right {
+    top: 0;
+    bottom: 22%;
+    width: 7px;
+}
+
+.wall-portal-left {
+    left: -6px;
+    background: linear-gradient(
+        to left,
+        rgba(255, 255, 255, .9) 0,
+        rgba(255, 255, 255, .72) 1px,
+        rgba(255, 255, 255, .32) 4px,
+        transparent 7px
+    );
+}
+
+.wall-portal-right {
+    right: -6px;
+    background: linear-gradient(
+        to right,
+        rgba(255, 255, 255, .9) 0,
+        rgba(255, 255, 255, .72) 1px,
+        rgba(255, 255, 255, .32) 4px,
+        transparent 7px
+    );
+}
+
+.wall-portal-back {
+    inset: 0;
+    background: linear-gradient(
+        to bottom,
+        rgba(255, 255, 255, .72) 0,
+        rgba(255, 255, 255, .48) 2px,
+        rgba(255, 255, 255, .14) 4px,
+        transparent 6px
+    );
+    -webkit-mask-image: url("assets/floor-up-s-b.png");
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-size: 100% 100%;
+    mask-image: url("assets/floor-up-s-b.png");
+    mask-repeat: no-repeat;
+    mask-size: 100% 100%;
+}
+
 .wall-sprite::after {
     position: absolute;
     inset: 0;

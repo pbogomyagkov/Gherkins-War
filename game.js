@@ -1,7 +1,10 @@
 (() => {
+    // Game tuning and sprite layout.
     const ASSET_PATH = 'assets/';
+    const ORIENTATION_QUERY = '(orientation: landscape)';
     const TILE_SIZE = 60;
     const WATER_TILE_COUNT = 4;
+    const PORTAL_COUNT = 2;
     const WATER_ROTATIONS = [0, 90, 180, 270];
     const WALL_PROBABILITY = 0.24;
     const WATER_SPEED_FACTOR = 0.67;
@@ -46,6 +49,7 @@
         u: { width: 60, bodyCenterX: 30, bodyTop: 17 },
     };
 
+    // DOM references and mutable game state.
     const elements = {
         field: document.querySelector('#field'),
         joystick: document.querySelector('#joystick'),
@@ -63,10 +67,15 @@
         walls: [],
         waterTiles: new Set(),
         waterRotations: new Map(),
+        portals: [],
         cells: [],
         player: { x: 0, y: 0, direction: 'u' },
         boss: { x: 0, y: 0, direction: 'd' },
         isJoystickHeld: false,
+        isPlayerTeleporting: false,
+        isBossTeleporting: false,
+        playerPortalLock: null,
+        bossPortalLock: null,
         joystickDirection: null,
         shots: { player: null, boss: null },
         moveTimer: null,
@@ -76,12 +85,17 @@
         bossSprite: null,
     };
 
+    // Shared tile and randomization helpers.
     function asset(name) {
         return `${ASSET_PATH}${name}`;
     }
 
     function tileKey(x, y) {
         return `${x},${y}`;
+    }
+
+    function isCharacterAt(character, x, y) {
+        return character.x === x && character.y === y;
     }
 
     function randomItem(items) {
@@ -97,8 +111,9 @@
         return shuffled;
     }
 
+    // Board sizing and level generation.
     function chooseDimensions() {
-        const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+        const isLandscape = window.matchMedia(ORIENTATION_QUERY).matches;
         game.columns = isLandscape ? 16 : 8;
         game.rows = isLandscape ? 8 : 16;
 
@@ -135,6 +150,7 @@
         game.player.direction = game.player.x < game.columns / 2 ? 'r' : 'l';
         placeBossAtRouteEnd(route);
         placeWaterTiles();
+        placePortals();
     }
 
     function createOpenRoute() {
@@ -181,9 +197,8 @@
 
         for (let y = 0; y < game.rows; y++) {
             for (let x = 0; x < game.columns; x++) {
-                const isCharacterTile =
-                    (x === game.player.x && y === game.player.y)
-                    || (x === game.boss.x && y === game.boss.y);
+                const isCharacterTile = isCharacterAt(game.player, x, y)
+                    || isCharacterAt(game.boss, x, y);
 
                 if (!game.walls[y][x] && !isCharacterTile) {
                     availableTiles.push(tileKey(x, y));
@@ -198,6 +213,77 @@
         );
     }
 
+    // Portals are generated only on unoccupied, non-water wall triggers.
+    function placePortals() {
+        const candidates = [];
+        const wallSides = [
+            { direction: 'u', x: 0, y: -1, surface: 'back' },
+            { direction: 'r', x: 1, y: 0, surface: 'right' },
+            { direction: 'd', x: 0, y: 1, surface: 'front' },
+            { direction: 'l', x: -1, y: 0, surface: 'left' },
+        ];
+
+        for (let y = 0; y < game.rows; y++) {
+            for (let x = 0; x < game.columns; x++) {
+                if (!game.walls[y][x]) continue;
+
+                for (const side of wallSides) {
+                    const trigger = { x: x + side.x, y: y + side.y };
+                    if (!isPortalWalkableTile(trigger.x, trigger.y)
+                        || game.waterTiles.has(tileKey(trigger.x, trigger.y))) {
+                        continue;
+                    }
+
+                    candidates.push({
+                        kind: 'wall',
+                        wall: { x, y },
+                        trigger,
+                        direction: side.direction,
+                        surface: side.surface,
+                    });
+                }
+            }
+        }
+
+        const selected = [];
+        for (const candidate of shuffle(candidates)) {
+            if (selected.some((portal) =>
+                tileKey(portal.trigger.x, portal.trigger.y)
+                    === tileKey(candidate.trigger.x, candidate.trigger.y))) {
+                continue;
+            }
+            selected.push(candidate);
+            if (selected.length === PORTAL_COUNT) break;
+        }
+        game.portals = selected;
+    }
+
+    function isPortalWalkableTile(x, y) {
+        return isWalkable(x, y)
+            && !isCharacterAt(game.player, x, y)
+            && !isCharacterAt(game.boss, x, y);
+    }
+
+    function createPortalElement(className) {
+        const portal = document.createElement('span');
+        portal.className = className;
+        portal.setAttribute('aria-hidden', 'true');
+        return portal;
+    }
+
+    function wallPortalAt(x, y, movement) {
+        return game.portals.find((portal) =>
+            portal.kind === 'wall'
+            && portal.trigger.x === x
+            && portal.trigger.y === y
+            && portal.wall.x === x + movement.x
+            && portal.wall.y === y + movement.y);
+    }
+
+    function pairedPortal(portal) {
+        return game.portals.find((item) => item !== portal);
+    }
+
     function isInsideField(x, y) {
         return x >= 0 && y >= 0 && x < game.columns && y < game.rows;
     }
@@ -206,6 +292,7 @@
         return isInsideField(x, y) && !game.walls[y][x];
     }
 
+    // DOM rendering.
     function renderLevel() {
         clearShots();
         const fragment = document.createDocumentFragment();
@@ -218,7 +305,15 @@
                 fragment.append(cell);
 
                 if (game.walls[y][x]) {
-                    fragment.append(createWallSprite(x, y));
+                    const wall = createWallSprite(x, y);
+                    const portal = game.portals.find((item) =>
+                        item.kind === 'wall' && item.wall.x === x && item.wall.y === y);
+                    if (portal) {
+                        wall.append(createPortalElement(
+                            `wall-portal wall-portal-${portal.surface}`,
+                        ));
+                    }
+                    fragment.append(wall);
                 }
             }
         }
@@ -241,7 +336,6 @@
         if (game.waterTiles.has(key)) {
             cell.append(createWaterSprite(game.waterRotations.get(key)));
         }
-
         return cell;
     }
 
@@ -313,27 +407,143 @@
         updateEntities();
     }
 
+    // Character movement and portal travel.
     function movePlayer(direction) {
         const vector = DIRECTIONS[direction];
-        if (!vector) return;
+        if (!vector || game.isPlayerTeleporting) return;
 
         const startsOnWater = game.waterTiles.has(tileKey(game.player.x, game.player.y));
         const nextX = game.player.x + vector.x;
         const nextY = game.player.y + vector.y;
-        const canMove = isWalkable(nextX, nextY)
-            && (nextX !== game.boss.x || nextY !== game.boss.y);
+        const move = resolvePortalMove(
+            game.player,
+            game.boss,
+            nextX,
+            nextY,
+            vector,
+        );
+        if (move.teleported) {
+            game.isPlayerTeleporting = true;
+            game.playerSprite.style.transitionDuration = '0ms';
+            animatePortalTravel(
+                game.playerSprite,
+                vector,
+                move.exitDirection,
+                () => {
+                    game.player.x = move.x;
+                    game.player.y = move.y;
+                    rotateWaterAt(move.x, move.y);
+                    game.playerPortalLock = move.portalLock;
+                    updateEntities();
+                },
+                () => {
+                    game.isPlayerTeleporting = false;
+                    updateEntities();
+                },
+            );
+            return;
+        }
 
-        if (canMove) {
-            game.player.x = nextX;
-            game.player.y = nextY;
-            rotateWaterAt(nextX, nextY);
+        if (move.x !== game.player.x || move.y !== game.player.y) {
+            game.player.x = move.x;
+            game.player.y = move.y;
+            rotateWaterAt(move.x, move.y);
+            game.playerPortalLock = null;
             game.playerSprite.style.transitionDuration = startsOnWater ? '390ms' : '260ms';
+        } else if (game.playerPortalLock) {
+            game.playerPortalLock = null;
         }
         updateEntities();
     }
 
+    function animatePortalTravel(piece, enterVector, exitDirection, onTeleport, onComplete) {
+        const bounds = elements.field.getBoundingClientRect();
+        const offsetX = bounds.width / game.columns * 0.3;
+        const offsetY = bounds.height / game.rows * 0.3;
+        const enterX = enterVector.x * offsetX;
+        const enterY = enterVector.y * offsetY;
+        const exitVector = DIRECTIONS[exitDirection];
+        const exitX = -exitVector.x * offsetX;
+        const exitY = -exitVector.y * offsetY;
+        const halfState = {
+            opacity: .7,
+            transform: `translate(${enterX}px, ${enterY}px) scale(.5)`,
+        };
+        const enterAnimation = piece.animate(
+            [
+                { opacity: 1, transform: 'translate(0, 0) scale(1)' },
+                halfState,
+            ],
+            { duration: 180, easing: 'ease-in', fill: 'forwards' },
+        );
+        enterAnimation.onfinish = () => {
+            enterAnimation.onfinish = null;
+            onTeleport();
+
+            const exitAnimation = piece.animate(
+                [
+                    {
+                        opacity: .7,
+                        transform: `translate(${exitX}px, ${exitY}px) scale(.5)`,
+                    },
+                    { opacity: 1, transform: 'translate(0, 0) scale(1)' },
+                ],
+                { duration: 180, easing: 'ease-out' },
+            );
+            enterAnimation.cancel();
+            exitAnimation.onfinish = () => {
+                exitAnimation.onfinish = null;
+                exitAnimation.cancel();
+                onComplete();
+            };
+        };
+    }
+
+    function findPortalExit(portal, blockingCharacter) {
+        if (!portal) return null;
+        const candidates = portal.kind === 'wall'
+            ? [{ ...portal.trigger, exitDirection: portal.direction }]
+            : [{ ...portal.trigger, exitDirection: null }];
+
+        return candidates.find(({ x, y }) =>
+            isWalkable(x, y)
+            && !isCharacterAt(blockingCharacter, x, y));
+    }
+
+    function resolvePortalMove(
+        movingCharacter,
+        blockingCharacter,
+        nextX,
+        nextY,
+        movement,
+        portalLock = null,
+    ) {
+        const foundWallPortal = wallPortalAt(movingCharacter.x, movingCharacter.y, movement);
+        const wallPortal = portalLock ? null : foundWallPortal;
+        const portal = wallPortal;
+        if (!portal) {
+            return isWalkable(nextX, nextY)
+                && !isCharacterAt(blockingCharacter, nextX, nextY)
+                ? { x: nextX, y: nextY, teleported: false }
+                : { x: movingCharacter.x, y: movingCharacter.y, teleported: false };
+        }
+
+        const destination = pairedPortal(portal);
+        const exit = findPortalExit(destination, blockingCharacter);
+        const exitDirection = destination.direction;
+        return exit
+            ? {
+                ...exit,
+                teleported: true,
+                portalLock: destination,
+                exitDirection: exitDirection ?? exit.exitDirection,
+            }
+            : { x: movingCharacter.x, y: movingCharacter.y, teleported: false };
+    }
+
+    // Boss decisions and combat.
     function moveBoss() {
-        if (game.shots.boss) return;
+        if (game.shots.boss || game.isBossTeleporting) return;
         if (Math.random() < BOSS_FIRE_CHANCE) {
             fireBoss();
             return;
@@ -342,18 +552,52 @@
         const options = Object.entries(DIRECTIONS)
             .map(([direction, vector]) => ({
                 direction,
-                x: game.boss.x + vector.x,
-                y: game.boss.y + vector.y,
+                ...resolvePortalMove(
+                    game.boss,
+                    game.player,
+                    game.boss.x + vector.x,
+                    game.boss.y + vector.y,
+                    vector,
+                    game.bossPortalLock,
+                ),
             }))
-            .filter(({ x, y }) =>
-                isWalkable(x, y) && (x !== game.player.x || y !== game.player.y),
-            );
-        if (options.length === 0) return;
+            .filter(({ x, y, teleported }) =>
+                teleported || x !== game.boss.x || y !== game.boss.y);
+        if (options.length === 0) {
+            game.bossPortalLock = null;
+            return;
+        }
 
         const next = randomItem(options);
+        if (next.teleported) {
+            game.isBossTeleporting = true;
+            game.bossPiece.style.transitionDuration = '0ms';
+            game.boss.direction = next.direction;
+            updateEntities();
+            animatePortalTravel(
+                game.bossPiece,
+                DIRECTIONS[next.direction],
+                next.exitDirection,
+                () => {
+                    game.boss.x = next.x;
+                    game.boss.y = next.y;
+                    game.bossPortalLock = next.portalLock;
+                    rotateWaterAt(next.x, next.y);
+                    updateEntities();
+                },
+                () => {
+                    game.isBossTeleporting = false;
+                    updateEntities();
+                },
+            );
+            return;
+        }
+
         game.boss.x = next.x;
         game.boss.y = next.y;
+        game.bossPortalLock = null;
         game.boss.direction = next.direction;
+        game.bossPiece.style.transitionDuration = '150ms';
         rotateWaterAt(next.x, next.y);
         updateEntities();
     }
@@ -374,14 +618,16 @@
         startShot('player', game.player, game.player.direction, PLAYER_SHOT_RANGE);
     }
 
+    // Projectiles advance one tile at a time; portal travel does not consume range.
     function startShot(owner, shooter, direction, range = Infinity) {
         clearShot(owner);
         const shot = {
             x: shooter.x,
             y: shooter.y,
             direction,
-            range,
-            distance: 0,
+            remainingRange: range,
+            path: [],
+            portalLock: null,
             stepMs: owner === 'boss' ? BOSS_SHOT_STEP_MS : PLAYER_SHOT_STEP_MS,
             cells: [],
             timer: null,
@@ -391,23 +637,62 @@
     }
 
     function advanceShot(owner, shot) {
-        const vector = DIRECTIONS[shot.direction];
-        const x = shot.x + vector.x * (shot.distance + 1);
-        const y = shot.y + vector.y * (shot.distance + 1);
-
-        const characterAhead =
-            (x === game.player.x && y === game.player.y)
-            || (x === game.boss.x && y === game.boss.y);
-        if (shot.distance >= shot.range || !isWalkable(x, y) || characterAhead) {
-            if (shot.cells.length) {
-                shot.timer = setTimeout(() => clearShot(owner), SHOT_FADE_MS);
-            } else {
-                clearShot(owner);
-            }
+        if (shot.remainingRange <= 0) {
+            finishShot(owner, shot);
             return;
         }
 
-        shot.distance++;
+        const vector = DIRECTIONS[shot.direction];
+        if (advanceShotThroughPortal(owner, shot, vector)) return;
+
+        const nextX = shot.x + vector.x;
+        const nextY = shot.y + vector.y;
+        const characterAhead = isCharacterAt(game.player, nextX, nextY)
+            || isCharacterAt(game.boss, nextX, nextY);
+        if (!isWalkable(nextX, nextY) || characterAhead) {
+            finishShot(owner, shot);
+            return;
+        }
+
+        shot.remainingRange--;
+        advanceShotTo(owner, shot, nextX, nextY);
+    }
+
+    function advanceShotThroughPortal(owner, shot, vector) {
+        const portal = shot.portalLock ? null : wallPortalAt(shot.x, shot.y, vector);
+        if (!portal) return false;
+
+        const destination = pairedPortal(portal);
+        const exit = destination && findPortalExit(destination, { x: -1, y: -1 });
+        if (!exit
+            || isCharacterAt(game.player, exit.x, exit.y)
+            || isCharacterAt(game.boss, exit.x, exit.y)) {
+            finishShot(owner, shot);
+            return true;
+        }
+
+        shot.x = exit.x;
+        shot.y = exit.y;
+        shot.direction = destination.direction;
+        shot.portalLock = destination;
+        recordShotPosition(owner, shot);
+        return true;
+    }
+
+    function advanceShotTo(owner, shot, x, y) {
+        shot.x = x;
+        shot.y = y;
+        shot.portalLock = null;
+        recordShotPosition(owner, shot);
+    }
+
+    function recordShotPosition(owner, shot) {
+        shot.path.push({ x: shot.x, y: shot.y, direction: shot.direction });
+        renderShotPath(owner, shot);
+        shot.timer = setTimeout(() => advanceShot(owner, shot), shot.stepMs);
+    }
+
+    function renderShotPath(owner, shot) {
         for (const previousCell of shot.cells) {
             previousCell.classList.remove(`${owner}-beam`, `${owner}-beam-vertical`);
         }
@@ -415,18 +700,25 @@
 
         const bulletCount = owner === 'boss' ? BOSS_BULLET_COUNT : 1;
         for (let bullet = 0; bullet < bulletCount; bullet++) {
-            const bulletDistance = shot.distance - bullet * BOSS_BULLET_SPACING;
-            if (bulletDistance < 1) continue;
+            const pathIndex = shot.path.length - 1 - bullet * BOSS_BULLET_SPACING;
+            if (pathIndex < 0) continue;
 
-            const bulletX = shot.x + vector.x * bulletDistance;
-            const bulletY = shot.y + vector.y * bulletDistance;
-            const cell = game.cells[bulletY * game.columns + bulletX];
+            const position = shot.path[pathIndex];
+            const cell = game.cells[position.y * game.columns + position.x];
             cell.classList.add(`${owner}-beam`);
-            if (vector.x === 0) cell.classList.add(`${owner}-beam-vertical`);
+            if (position.direction === 'u' || position.direction === 'd') {
+                cell.classList.add(`${owner}-beam-vertical`);
+            }
             shot.cells.push(cell);
         }
+    }
 
-        shot.timer = setTimeout(() => advanceShot(owner, shot), shot.stepMs);
+    function finishShot(owner, shot) {
+        if (shot.cells.length) {
+            shot.timer = setTimeout(() => clearShot(owner), SHOT_FADE_MS);
+        } else {
+            clearShot(owner);
+        }
     }
 
     function clearShot(owner) {
@@ -445,6 +737,7 @@
         clearShot('boss');
     }
 
+    // Water effects and joystick movement.
     function rotateWaterAt(x, y) {
         const key = tileKey(x, y);
         if (!game.waterTiles.has(key)) return;
@@ -522,10 +815,6 @@
         elements.stickKnob.style.transform = 'translate(-50%, -50%)';
     }
 
-    function fire() {
-        firePlayer();
-    }
-
     function handleKeyDown(event) {
         const moveDirection = MOVE_KEYS[event.code];
         const turnDirection = TURN_KEYS[event.code];
@@ -536,10 +825,11 @@
             else setPlayerDirection(turnDirection);
         } else if (event.code === 'Space') {
             event.preventDefault();
-            fire();
+            firePlayer();
         }
     }
 
+    // Resize handling preserves the current map by rotating it between layouts.
     function handleResize() {
         const previousColumns = game.columns;
         const previousRows = game.rows;
@@ -604,6 +894,24 @@
                 ];
             }),
         );
+        game.portals = game.portals.map((portal) => {
+            const direction = portal.direction
+                ? rotateDirection(portal.direction, rotationTurns)
+                : null;
+            return {
+                ...portal,
+                trigger: rotatePosition(portal.trigger),
+                ...(portal.wall && { wall: rotatePosition(portal.wall) }),
+                ...(direction && {
+                    direction,
+                    surface: portalSurface(direction),
+                }),
+            };
+        });
+    }
+
+    function portalSurface(direction) {
+        return { u: 'back', r: 'right', d: 'front', l: 'left' }[direction];
     }
 
     function rotateDirection(direction, rotationTurns) {
@@ -613,7 +921,7 @@
     }
 
     function getOrientationLabel() {
-        const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+        const isLandscape = window.matchMedia(ORIENTATION_QUERY).matches;
         if (!isLandscape) return 'Portrait';
 
         return 'Landscape';
@@ -623,6 +931,7 @@
         elements.debugStatus.value = `${getOrientationLabel()} | ${tiltLabel}`;
     }
 
+    // Motion permission and tilt feedback.
     function isMobileDevice() {
         return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
             || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -680,7 +989,7 @@
         const edgeWidth = tiltStrength <= MIN_TILT_ANGLE
             ? 0
             : 1 + (tiltStrength - MIN_TILT_ANGLE)
-                / (MAX_TILT_ANGLE - MIN_TILT_ANGLE) * 3;
+                / (MAX_TILT_ANGLE - MIN_TILT_ANGLE);
 
         elements.field.classList.toggle('tilt-left', tilt < -MIN_TILT_ANGLE);
         elements.field.classList.toggle('tilt-right', tilt > MIN_TILT_ANGLE);
@@ -699,6 +1008,7 @@
         document.removeEventListener('pointerdown', startImmersiveMode);
     }
 
+    // Control bindings and game startup.
     function bindControls() {
         elements.joystick.addEventListener('pointerdown', (event) => {
             event.preventDefault();
@@ -722,7 +1032,7 @@
 
         elements.fireButton.addEventListener('pointerdown', (event) => {
             event.preventDefault();
-            fire();
+            firePlayer();
         });
         elements.motionEnable.addEventListener('click', () => {
             void enableTilt();
