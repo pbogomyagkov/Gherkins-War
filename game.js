@@ -61,8 +61,8 @@
         },
         portal: {
             floor: { x: 0, y: 180, width: 60, height: 60 },
-            left: { x: 120, y: 180, width: 60, height: 60 },
-            right: { x: 60, y: 180, width: 60, height: 60 },
+            left: { x: 160, y: 160, width: 20, height: 80 },
+            right: { x: 60, y: 160, width: 20, height: 80 },
             up: { x: 180, y: 180, width: 60, height: 60 },
             down: { x: 240, y: 160, width: 60, height: 60 },
         },
@@ -352,9 +352,9 @@
 
                 if (game.walls[y][x]) {
                     const wall = createWallSprite(x, y);
-                    const portal = game.portals.find((item) =>
+                    const portals = game.portals.filter((item) =>
                         item.kind === 'wall' && item.wall.x === x && item.wall.y === y);
-                    if (portal) {
+                    for (const portal of portals) {
                         wall.append(...createPortalElements(portal.surface));
                     }
                     fragment.append(wall);
@@ -998,11 +998,6 @@
     }
 
     // Motion permission and tilt feedback.
-    function isMobileDevice() {
-        return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
-            || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    }
-
     function enterFullscreen() {
         const requestFullscreen = document.documentElement.requestFullscreen;
         if (!requestFullscreen || document.fullscreenElement) return;
@@ -1042,20 +1037,22 @@
     }
 
     function handleTilt(event) {
-        if (event.gamma === null) {
+        const gamma = event.gamma;
+        const beta = event.beta ?? 0;
+        if (!Number.isFinite(gamma) || !Number.isFinite(beta)) {
             updateDebugStatus('Tilt: waiting for sensor');
             return;
         }
 
         const screenAngle = screen.orientation?.angle ?? window.orientation ?? 0;
         const angle = screenAngle * Math.PI / 180;
-        const horizontalTilt = event.gamma * Math.cos(angle) - (event.beta ?? 0) * Math.sin(angle);
+        const horizontalTilt = gamma * Math.cos(angle) - beta * Math.sin(angle);
         const tilt = Math.max(-MAX_TILT_ANGLE, Math.min(MAX_TILT_ANGLE, horizontalTilt));
         const tiltStrength = Math.abs(tilt);
         const edgeWidth = tiltStrength <= MIN_TILT_ANGLE
             ? 0
-            : 1 + (tiltStrength - MIN_TILT_ANGLE)
-                / (MAX_TILT_ANGLE - MIN_TILT_ANGLE);
+            : (tiltStrength - MIN_TILT_ANGLE)
+                / (MAX_TILT_ANGLE - MIN_TILT_ANGLE) * 12;
 
         elements.field.classList.toggle('tilt-left', tilt < -MIN_TILT_ANGLE);
         elements.field.classList.toggle('tilt-right', tilt > MIN_TILT_ANGLE);
@@ -1142,10 +1139,13 @@
         generateLevel();
         renderLevel();
         updateDebugStatus();
-        if (isMobileDevice() && window.DeviceOrientationEvent) {
+        if (window.DeviceOrientationEvent
+            && typeof window.DeviceOrientationEvent.requestPermission === 'function') {
             elements.motionPrompt.hidden = false;
             elements.motionEnable.focus();
-        } else if (!window.DeviceOrientationEvent) {
+        } else if (window.DeviceOrientationEvent) {
+            window.addEventListener('deviceorientation', handleTilt);
+        } else {
             updateDebugStatus('Tilt: unavailable');
         }
         setInterval(moveBoss, BOSS_STEP_MS);

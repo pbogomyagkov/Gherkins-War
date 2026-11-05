@@ -155,8 +155,14 @@ button {
     height: 60%;
 }
 
+.wall-portal-left,
+.wall-portal-right {
+    width: 33.333%;
+    height: 80%;
+}
+
 .wall-portal-left {
-    left: -100%;
+    left: -33.333%;
 }
 
 .wall-portal-up {
