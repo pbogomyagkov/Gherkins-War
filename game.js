@@ -494,6 +494,7 @@
                 () => {
                     game.player.x = move.x;
                     game.player.y = move.y;
+                    game.player.direction = move.exitDirection;
                     rotateWaterAt(move.x, move.y);
                     game.playerPortalLock = move.portalLock;
                     updateEntities();
@@ -592,13 +593,12 @@
 
         const destination = pairedPortal(portal);
         const exit = findPortalExit(destination, blockingCharacter);
-        const exitDirection = destination.direction;
         return exit
             ? {
                 ...exit,
                 teleported: true,
                 portalLock: destination,
-                exitDirection: exitDirection ?? exit.exitDirection,
+                exitDirection: destination.direction ?? exit.exitDirection,
             }
             : { x: movingCharacter.x, y: movingCharacter.y, teleported: false };
     }
@@ -643,6 +643,7 @@
                 () => {
                     game.boss.x = next.x;
                     game.boss.y = next.y;
+                    game.boss.direction = next.exitDirection;
                     game.bossPortalLock = next.portalLock;
                     rotateWaterAt(next.x, next.y);
                     updateEntities();
