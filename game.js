@@ -355,6 +355,7 @@
                     const portals = game.portals.filter((item) =>
                         item.kind === 'wall' && item.wall.x === x && item.wall.y === y);
                     for (const portal of portals) {
+                        wall.classList.add(`wall-has-portal-${portal.surface}`);
                         wall.append(...createPortalElements(portal.surface));
                     }
                     fragment.append(wall);
@@ -1052,7 +1053,7 @@
         const edgeWidth = tiltStrength <= MIN_TILT_ANGLE
             ? 0
             : (tiltStrength - MIN_TILT_ANGLE)
-                / (MAX_TILT_ANGLE - MIN_TILT_ANGLE) * 12;
+                / (MAX_TILT_ANGLE - MIN_TILT_ANGLE) * 2;
 
         elements.field.classList.toggle('tilt-left', tilt < -MIN_TILT_ANGLE);
         elements.field.classList.toggle('tilt-right', tilt > MIN_TILT_ANGLE);

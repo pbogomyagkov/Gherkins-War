@@ -107,37 +107,36 @@ button {
     height: 20%;
 }
 
-.wall-front-sprite::after {
+.wall-sprite::after {
     position: absolute;
-    inset: 0;
-    clip-path: inset(0 0 22%);
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 80%;
     background: transparent;
-    -webkit-mask-image: var(--sprite-sheet);
-    -webkit-mask-repeat: no-repeat;
-    -webkit-mask-size: 1110% auto;
-    -webkit-mask-position: 19.802% 21.672%;
-    mask-image: var(--sprite-sheet);
-    mask-repeat: no-repeat;
-    mask-size: 1110% auto;
-    mask-position: 19.802% 21.672%;
     content: "";
     pointer-events: none;
 }
 
-.field.tilt-left .wall-edge-right .wall-front-sprite::after {
+.field.tilt-left .wall-edge-right::after {
     background: linear-gradient(
         to left,
-        #8a8a8a var(--wall-edge-width),
+        var(--tilt-edge-color, #8a8a8a) var(--wall-edge-width),
         transparent var(--wall-edge-width)
     );
 }
 
-.field.tilt-right .wall-edge-left .wall-front-sprite::after {
+.field.tilt-right .wall-edge-left::after {
     background: linear-gradient(
         to right,
-        #8a8a8a var(--wall-edge-width),
+        var(--tilt-edge-color, #8a8a8a) var(--wall-edge-width),
         transparent var(--wall-edge-width)
     );
+}
+
+.field.tilt-left .wall-edge-right.wall-has-portal-right::after,
+.field.tilt-right .wall-edge-left.wall-has-portal-left::after {
+    --tilt-edge-color: #fff;
 }
 
 .wall-portal {
