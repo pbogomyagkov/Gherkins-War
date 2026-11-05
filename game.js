@@ -1,6 +1,7 @@
 (() => {
     // Game tuning and sprite layout.
-    const ASSET_PATH = 'assets/';
+    const SPRITE_SHEET_PATH = 'assets/combined.png';
+    const SPRITE_SHEET_SIZE = 666;
     const ORIENTATION_QUERY = '(orientation: landscape)';
     const TILE_SIZE = 60;
     const WATER_TILE_COUNT = 4;
@@ -39,6 +40,39 @@
         KeyD: 'r',
         KeyS: 'd',
         KeyA: 'l',
+    };
+
+    const SPRITES = {
+        floor: { x: 0, y: 100, width: 60, height: 60 },
+        wallTop: { x: 60, y: 80, width: 60, height: 60 },
+        wallFront: { x: 120, y: 140, width: 60, height: 20 },
+        water: { x: 180, y: 100, width: 60, height: 60 },
+        player: {
+            d: { x: 0, y: 1, width: 60, height: 60 },
+            r: { x: 60, y: 1, width: 60, height: 60 },
+            u: { x: 120, y: 1, width: 60, height: 60 },
+            l: { x: 180, y: 1, width: 60, height: 60 },
+        },
+        boss: {
+            d: { x: 240, y: 1, width: 60, height: 78 },
+            l: { x: 441, y: 1, width: 62, height: 60 },
+            u: { x: 380, y: 1, width: 60, height: 60 },
+            r: { x: 317, y: 1, width: 62, height: 60 },
+        },
+        portal: {
+            floor: { x: 0, y: 180, width: 60, height: 60 },
+            left: { x: 120, y: 180, width: 60, height: 60 },
+            right: { x: 60, y: 180, width: 60, height: 60 },
+            up: { x: 180, y: 180, width: 60, height: 60 },
+            down: { x: 240, y: 160, width: 60, height: 60 },
+        },
+    };
+
+    const PORTAL_SPRITES = {
+        front: [{ name: 'down', className: 'wall-portal-down' }],
+        left: [{ name: 'left', className: 'wall-portal-left' }],
+        right: [{ name: 'right', className: 'wall-portal-right' }],
+        back: [{ name: 'up', className: 'wall-portal-up' }],
     };
 
     // Bounds are measured from each source sprite; bodyCenterX excludes the minigun.
@@ -87,8 +121,13 @@
     };
 
     // Shared tile and randomization helpers.
-    function asset(name) {
-        return `${ASSET_PATH}${name}`;
+    function setAtlasSprite(element, sprite, visibleHeight = sprite.height) {
+        const scaleWidth = SPRITE_SHEET_SIZE / sprite.width * 100;
+        const positionX = sprite.x / (SPRITE_SHEET_SIZE - sprite.width) * 100;
+        const positionY = sprite.y / (SPRITE_SHEET_SIZE - visibleHeight) * 100;
+        element.style.backgroundImage = 'var(--sprite-sheet)';
+        element.style.backgroundSize = `${scaleWidth}% auto`;
+        element.style.backgroundPosition = `${positionX}% ${positionY}%`;
     }
 
     function tileKey(x, y) {
@@ -265,11 +304,17 @@
             && !isCharacterAt(game.boss, x, y);
     }
 
-    function createPortalElement(className) {
+    function createPortalElement(className, sprite) {
         const portal = document.createElement('span');
-        portal.className = className;
+        portal.className = `wall-portal ${className}`;
         portal.setAttribute('aria-hidden', 'true');
+        setAtlasSprite(portal, sprite);
         return portal;
+    }
+
+    function createPortalElements(surface) {
+        return PORTAL_SPRITES[surface].map(({ name, className }) =>
+            createPortalElement(className, SPRITES.portal[name]));
     }
 
     function wallPortalAt(x, y, movement) {
@@ -310,9 +355,7 @@
                     const portal = game.portals.find((item) =>
                         item.kind === 'wall' && item.wall.x === x && item.wall.y === y);
                     if (portal) {
-                        wall.append(createPortalElement(
-                            `wall-portal wall-portal-${portal.surface}`,
-                        ));
+                        wall.append(...createPortalElements(portal.surface));
                     }
                     fragment.append(wall);
                 }
@@ -333,6 +376,7 @@
         const key = tileKey(x, y);
         cell.className = 'cell';
         cell.setAttribute('role', 'gridcell');
+        setAtlasSprite(cell, SPRITES.floor, TILE_SIZE);
 
         if (game.waterTiles.has(key)) {
             cell.append(createWaterSprite(game.waterRotations.get(key)));
@@ -341,11 +385,9 @@
     }
 
     function createWaterSprite(rotation) {
-        const sprite = document.createElement('img');
+        const sprite = document.createElement('div');
         sprite.className = 'water-sprite';
-        sprite.src = asset('floor-w.png');
-        sprite.alt = '';
-        sprite.draggable = false;
+        setAtlasSprite(sprite, SPRITES.water);
         sprite.style.setProperty('--water-rotation', `${rotation}deg`);
         return sprite;
     }
@@ -359,6 +401,13 @@
             hasOpenLeft && 'wall-edge-left',
             hasOpenRight && 'wall-edge-right',
         ].filter(Boolean).join(' ');
+        const top = document.createElement('span');
+        top.className = 'wall-top-sprite';
+        setAtlasSprite(top, SPRITES.wallTop);
+        const front = document.createElement('span');
+        front.className = 'wall-front-sprite';
+        setAtlasSprite(front, SPRITES.wallFront, TILE_SIZE / 3);
+        wall.append(top, front);
         wall.style.left = `${x * 100 / game.columns}%`;
         wall.style.top = `${(y - 0.3) * 100 / game.rows}%`;
         wall.style.width = `${100 / game.columns}%`;
@@ -370,17 +419,15 @@
     function createBossPiece() {
         game.bossPiece = document.createElement('div');
         game.bossPiece.className = 'entity-piece boss-piece';
-        game.bossSprite = document.createElement('img');
+        game.bossSprite = document.createElement('div');
         game.bossSprite.className = 'boss-sprite';
-        game.bossSprite.alt = '';
-        game.bossSprite.draggable = false;
         game.bossPiece.append(game.bossSprite);
     }
 
     function updateEntities() {
         game.playerSprite.style.left = `${game.player.x * 100 / game.columns}%`;
         game.playerSprite.style.top = `${(game.player.y - 0.3) * 100 / game.rows}%`;
-        game.playerSprite.style.backgroundImage = `url("${asset(`player-${game.player.direction}.png`)}")`;
+        setAtlasSprite(game.playerSprite, SPRITES.player[game.player.direction]);
         game.playerSprite.style.zIndex = String(game.player.y * 4 + 2);
 
         game.bossPiece.style.left = `${game.boss.x * 100 / game.columns}%`;
@@ -397,7 +444,9 @@
 
     function updateBossSprite() {
         const layout = BOSS_SPRITE_LAYOUT[game.boss.direction];
-        game.bossSprite.src = asset(`boss-${game.boss.direction}.png`);
+        const sprite = SPRITES.boss[game.boss.direction];
+        setAtlasSprite(game.bossSprite, sprite);
+        game.bossSprite.style.aspectRatio = `${sprite.width} / ${sprite.height}`;
         game.bossSprite.style.width = `${layout.width / TILE_SIZE * 100}%`;
         game.bossSprite.style.left =
             `${(TILE_SIZE / 2 - layout.bodyCenterX) / TILE_SIZE * 100}%`;
@@ -477,14 +526,14 @@
         const exitVector = DIRECTIONS[exitDirection];
         const exitX = -exitVector.x * offsetX;
         const exitY = -exitVector.y * offsetY;
-        const halfState = {
+        const enterState = {
             opacity: .7,
-            transform: `translate(${enterX}px, ${enterY}px) scale(.5)`,
+            transform: `translate(${enterX}px, ${enterY}px)`,
         };
         const enterAnimation = piece.animate(
             [
-                { opacity: 1, transform: 'translate(0, 0) scale(1)' },
-                halfState,
+                { opacity: 1, transform: 'translate(0, 0)' },
+                enterState,
             ],
             { duration: 180, easing: 'ease-in', fill: 'forwards' },
         );
@@ -496,9 +545,9 @@
                 [
                     {
                         opacity: .7,
-                        transform: `translate(${exitX}px, ${exitY}px) scale(.5)`,
+                        transform: `translate(${exitX}px, ${exitY}px)`,
                     },
-                    { opacity: 1, transform: 'translate(0, 0) scale(1)' },
+                    { opacity: 1, transform: 'translate(0, 0)' },
                 ],
                 { duration: 180, easing: 'ease-out' },
             );
@@ -1062,7 +1111,32 @@
         screen.orientation?.addEventListener('change', scheduleResize);
     }
 
-    function start() {
+    async function start() {
+        const image = new Image();
+        image.src = SPRITE_SHEET_PATH;
+        await image.decode();
+
+        const canvas = document.createElement('canvas');
+        canvas.width = SPRITE_SHEET_SIZE;
+        canvas.height = SPRITE_SHEET_SIZE;
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        if (!context) throw new Error('Unable to prepare the sprite sheet.');
+        context.drawImage(image, 0, 0);
+
+        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+        for (let index = 0; index < imageData.data.length; index += 4) {
+            if (imageData.data[index] === 255
+                && imageData.data[index + 1] === 0
+                && imageData.data[index + 2] === 0) {
+                imageData.data[index + 3] = 0;
+            }
+        }
+        context.putImageData(imageData, 0, 0);
+        document.documentElement.style.setProperty(
+            '--sprite-sheet',
+            `url("${canvas.toDataURL('image/png')}")`,
+        );
+
         bindControls();
         chooseDimensions();
         generateLevel();

@@ -71,10 +71,7 @@ button {
     z-index: 0;
     overflow: hidden;
     background-color: #27d532;
-    /* Each square shows only the upper 60px of the 60x100 floor sprite. */
-    background-image: url("assets/floor-d1.png");
-    background-position: center top;
-    background-size: 100% 166.667%;
+    background-repeat: no-repeat;
 }
 
 .water-sprite {
@@ -82,124 +79,103 @@ button {
     inset: 0;
     width: 100%;
     height: 100%;
+    background-repeat: no-repeat;
     transform: rotate(var(--water-rotation, 0deg));
-}
-
-.wall-sprite,
-.water-sprite,
-.boss-sprite {
-    pointer-events: none;
 }
 
 .wall-sprite {
     position: absolute;
-    background-image: url("assets/floor-up-s-b.png");
+    pointer-events: none;
+}
+
+.wall-top-sprite,
+.wall-front-sprite {
+    position: absolute;
+    left: 0;
+    width: 100%;
     background-repeat: no-repeat;
-    background-position: center top;
-    background-size: 100% 100%;
+    pointer-events: none;
+}
+
+.wall-top-sprite {
+    top: 0;
+    height: 60%;
+}
+
+.wall-front-sprite {
+    top: 60%;
+    height: 20%;
+}
+
+.wall-front-sprite::after {
+    position: absolute;
+    inset: 0;
+    clip-path: inset(0 0 22%);
+    background: transparent;
+    -webkit-mask-image: var(--sprite-sheet);
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-size: 1110% auto;
+    -webkit-mask-position: 19.802% 21.672%;
+    mask-image: var(--sprite-sheet);
+    mask-repeat: no-repeat;
+    mask-size: 1110% auto;
+    mask-position: 19.802% 21.672%;
+    content: "";
+    pointer-events: none;
+}
+
+.field.tilt-left .wall-edge-right .wall-front-sprite::after {
+    background: linear-gradient(
+        to left,
+        #8a8a8a var(--wall-edge-width),
+        transparent var(--wall-edge-width)
+    );
+}
+
+.field.tilt-right .wall-edge-left .wall-front-sprite::after {
+    background: linear-gradient(
+        to right,
+        #8a8a8a var(--wall-edge-width),
+        transparent var(--wall-edge-width)
+    );
 }
 
 .wall-portal {
     position: absolute;
-    z-index: 1;
-    background: radial-gradient(
-        ellipse,
-        rgba(255, 255, 255, .82) 0%,
-        rgba(255, 255, 255, .42) 48%,
-        rgba(255, 255, 255, .12) 76%,
-        transparent 100%
-    );
+    background-repeat: no-repeat;
     pointer-events: none;
-}
-
-.wall-portal-front {
-    top: calc(58% + 2px);
-    left: 0;
-    width: 100%;
-    height: 20%;
-    border-radius: 50%;
-    background: radial-gradient(
-        ellipse,
-        rgba(255, 255, 255, .72) 0%,
-        rgba(255, 255, 255, .5) 45%,
-        rgba(255, 255, 255, .12) 100%
-    );
 }
 
 .wall-portal-left,
-.wall-portal-right {
+.wall-portal-right,
+.wall-portal-up {
     top: 0;
-    bottom: 22%;
-    width: 7px;
+    left: 0;
+    width: 100%;
+    height: 60%;
 }
 
 .wall-portal-left {
-    left: -6px;
-    background: linear-gradient(
-        to left,
-        rgba(255, 255, 255, .9) 0,
-        rgba(255, 255, 255, .72) 1px,
-        rgba(255, 255, 255, .32) 4px,
-        transparent 7px
-    );
+    left: -100%;
+}
+
+.wall-portal-up {
+    transform: translateY(-40%);
 }
 
 .wall-portal-right {
-    right: -6px;
-    background: linear-gradient(
-        to right,
-        rgba(255, 255, 255, .9) 0,
-        rgba(255, 255, 255, .72) 1px,
-        rgba(255, 255, 255, .32) 4px,
-        transparent 7px
-    );
+    left: 100%;
 }
 
-.wall-portal-back {
+.wall-portal-floor {
     inset: 0;
-    background: linear-gradient(
-        to bottom,
-        rgba(255, 255, 255, .72) 0,
-        rgba(255, 255, 255, .48) 2px,
-        rgba(255, 255, 255, .14) 4px,
-        transparent 6px
-    );
-    -webkit-mask-image: url("assets/floor-up-s-b.png");
-    -webkit-mask-repeat: no-repeat;
-    -webkit-mask-size: 100% 100%;
-    mask-image: url("assets/floor-up-s-b.png");
-    mask-repeat: no-repeat;
-    mask-size: 100% 100%;
 }
 
-.wall-sprite::after {
-    position: absolute;
-    inset: 0;
-    clip-path: inset(0 0 22%);
-    content: "";
-    pointer-events: none;
-    -webkit-mask-image: url("assets/floor-up-s-b.png");
-    -webkit-mask-repeat: no-repeat;
-    -webkit-mask-size: 100% 100%;
-    mask-image: url("assets/floor-up-s-b.png");
-    mask-repeat: no-repeat;
-    mask-size: 100% 100%;
-}
-
-.field.tilt-left .wall-sprite.wall-edge-right::after {
-    background: linear-gradient(
-        to left,
-        #8a8a8a var(--wall-edge-width),
-        transparent var(--wall-edge-width)
-    );
-}
-
-.field.tilt-right .wall-sprite.wall-edge-left::after {
-    background: linear-gradient(
-        to right,
-        #8a8a8a var(--wall-edge-width),
-        transparent var(--wall-edge-width)
-    );
+.wall-portal-down {
+    top: 60%;
+    left: 0;
+    width: 100%;
+    height: 60%;
 }
 
 .entity-piece {
@@ -222,6 +198,7 @@ button {
 .boss-sprite {
     position: absolute;
     image-rendering: pixelated;
+    background-repeat: no-repeat;
 }
 
 .player-piece,
