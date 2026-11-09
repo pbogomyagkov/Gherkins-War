@@ -4,10 +4,9 @@
     const SPRITE_SHEET_SIZE = 666;
     const ORIENTATION_QUERY = '(orientation: landscape)';
     const TILE_SIZE = 60;
-    const WATER_TILE_COUNT = 4;
-    const PORTAL_COUNT = 2;
+    const LEVEL_FILES = Array.from({ length: 5 }, (_, index) =>
+        `levels/dev${String(index + 1).padStart(3, '0')}.csv`);
     const WATER_ROTATIONS = [0, 90, 180, 270];
-    const WALL_PROBABILITY = 0.24;
     const WATER_SPEED_FACTOR = 0.67;
     const BOSS_STEP_MS = 750;
     const JOYSTICK_STEP_MS = 320;
@@ -142,16 +141,7 @@
         return items[Math.floor(Math.random() * items.length)];
     }
 
-    function shuffle(items) {
-        const shuffled = [...items];
-        for (let index = shuffled.length - 1; index > 0; index--) {
-            const swapIndex = Math.floor(Math.random() * (index + 1));
-            [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
-        }
-        return shuffled;
-    }
-
-    // Board sizing and level generation.
+    // Board sizing and preloaded level parsing.
     function chooseDimensions() {
         const isLandscape = window.matchMedia(ORIENTATION_QUERY).matches;
         game.columns = isLandscape ? 16 : 8;
@@ -162,146 +152,129 @@
         elements.field.style.setProperty('--cell-width', `${100 / game.columns}%`);
         elements.field.style.setProperty('--cell-height', `${100 / game.rows}%`);
 
-        const shortSide = Math.min(window.innerWidth, window.innerHeight);
-        const longSide = Math.max(window.innerWidth, window.innerHeight);
         const tileSize = Math.max(1, Math.floor(Math.min(
-            (shortSide - 16) / 8,
-            (longSide - 16) / 16,
+            (window.innerWidth - 16) / game.columns,
+            (window.innerHeight - 16) / game.rows,
         ) - 2));
         const fieldWidth = tileSize * game.columns;
         const fieldHeight = tileSize * game.rows;
-        const topGap = isLandscape
-            ? Math.max(0, (window.innerHeight - fieldHeight) / 2)
-            : Math.max(0, (window.innerWidth - fieldWidth) / 2);
+        const topGap = Math.max(0, (window.innerHeight - fieldHeight) / 2);
 
         elements.field.style.width = `${fieldWidth}px`;
         elements.field.style.height = `${fieldHeight}px`;
         elements.field.style.marginTop = `${topGap}px`;
     }
 
-    function generateLevel() {
-        game.walls = Array.from({ length: game.rows }, () =>
-            Array.from({ length: game.columns }, () => Math.random() < WALL_PROBABILITY),
-        );
-
-        const route = createOpenRoute();
-        game.player.x = route[0].x;
-        game.player.y = route[0].y;
-        game.player.direction = game.player.x < game.columns / 2 ? 'r' : 'l';
-        placeBossAtRouteEnd(route);
-        placeWaterTiles();
-        placePortals();
-    }
-
-    function createOpenRoute() {
-        const route = [];
-        let routeY = Math.floor(Math.random() * game.rows);
-
-        for (let x = 0; x < game.columns; x++) {
-            const previousY = routeY;
-            if (x > 0 && x < game.columns - 1 && Math.random() < 0.65) {
-                const verticalStep = Math.random() < 0.5 ? -1 : 1;
-                routeY = Math.max(0, Math.min(game.rows - 1, routeY + verticalStep));
+    async function loadRandomLevel() {
+        const availableLevels = await Promise.all(LEVEL_FILES.map(async (path) => {
+            const response = await fetch(path);
+            if (response.status === 404) return null;
+            if (!response.ok) {
+                throw new Error(`Unable to load ${path}: HTTP ${response.status}.`);
             }
-
-            if (routeY !== previousY) {
-                game.walls[previousY][x] = false;
-                route.push({ x, y: previousY });
-            }
-            game.walls[routeY][x] = false;
-            route.push({ x, y: routeY });
+            return { path, text: await response.text() };
+        }));
+        const levels = availableLevels.filter((level) => level !== null);
+        if (levels.length === 0) {
+            throw new Error('No preloaded levels found in the levels folder.');
         }
 
-        return route;
+        const selected = randomItem(levels);
+        return {
+            path: selected.path,
+            ...parseLevel(selected.text, selected.path),
+        };
     }
 
-    function placeBossAtRouteEnd(route) {
-        const routeTiles = new Set(route.map(({ x, y }) => tileKey(x, y)));
-        const end = route[route.length - 1];
-        const adjacentTiles = [
-            { x: end.x, y: end.y - 1 },
-            { x: end.x, y: end.y + 1 },
-            { x: end.x - 1, y: end.y },
-        ];
-        const availableTiles = adjacentTiles.filter(({ x, y }) =>
-            isInsideField(x, y) && !routeTiles.has(tileKey(x, y)),
-        );
-        const bossTile = randomItem(availableTiles);
+    function parseLevel(text, path) {
+        const rows = text.trim().split(/\r?\n/).map((line) =>
+            line.split(',').map((token) => token.trim().replace(/^\[|\]$/g, '')));
+        const columns = rows[0]?.length ?? 0;
+        if (columns === 0 || rows.some((row) => row.length !== columns)) {
+            throw new Error(`${path} must contain a non-empty rectangular CSV grid.`);
+        }
 
-        game.boss = { ...bossTile, direction: 'd' };
-        game.walls[game.boss.y][game.boss.x] = false;
-    }
+        const walls = [];
+        const waterTiles = new Set();
+        const waterRotations = new Map();
+        const portals = [];
+        let player = null;
+        let boss = null;
+        const portalDirections = {
+            'w>': ['r'],
+            '<w': ['l'],
+            '<w>': ['l', 'r'],
+            '/w\\': ['u'],
+            '\\w/': ['d'],
+            '/w/': ['u', 'd'],
+        };
 
-    function placeWaterTiles() {
-        const availableTiles = [];
-
-        for (let y = 0; y < game.rows; y++) {
-            for (let x = 0; x < game.columns; x++) {
-                const isCharacterTile = isCharacterAt(game.player, x, y)
-                    || isCharacterAt(game.boss, x, y);
-
-                if (!game.walls[y][x] && !isCharacterTile) {
-                    availableTiles.push(tileKey(x, y));
+        for (let y = 0; y < rows.length; y++) {
+            const wallRow = [];
+            for (let x = 0; x < columns; x++) {
+                const token = rows[y][x];
+                const directionList = portalDirections[token];
+                if (!['p', 'b', 'w', 't', 's'].includes(token) && !directionList) {
+                    throw new Error(`${path} has unknown tile "${token}" at row ${y + 1}, column ${x + 1}.`);
                 }
-            }
-        }
 
-        const chosenTiles = shuffle(availableTiles).slice(0, WATER_TILE_COUNT);
-        game.waterTiles = new Set(chosenTiles);
-        game.waterRotations = new Map(
-            chosenTiles.map((tile, index) => [tile, WATER_ROTATIONS[index]]),
-        );
-    }
+                const isWall = token === 'w' || Boolean(directionList);
+                wallRow.push(isWall);
+                if (token === 'p') {
+                    if (player) throw new Error(`${path} must contain exactly one [p] tile.`);
+                    player = { x, y, direction: 'r' };
+                } else if (token === 'b') {
+                    if (boss) throw new Error(`${path} must contain exactly one [b] tile.`);
+                    boss = { x, y, direction: 'd' };
+                } else if (token === 's') {
+                    const key = tileKey(x, y);
+                    waterTiles.add(key);
+                    waterRotations.set(key, randomItem(WATER_ROTATIONS));
+                }
 
-    // Portals are generated only on unoccupied, non-water wall triggers.
-    function placePortals() {
-        const candidates = [];
-        const wallSides = [
-            { direction: 'u', x: 0, y: -1, surface: 'back' },
-            { direction: 'r', x: 1, y: 0, surface: 'right' },
-            { direction: 'd', x: 0, y: 1, surface: 'front' },
-            { direction: 'l', x: -1, y: 0, surface: 'left' },
-        ];
-
-        for (let y = 0; y < game.rows; y++) {
-            for (let x = 0; x < game.columns; x++) {
-                if (!game.walls[y][x]) continue;
-
-                for (const side of wallSides) {
-                    const trigger = { x: x + side.x, y: y + side.y };
-                    if (!isPortalWalkableTile(trigger.x, trigger.y)
-                        || game.waterTiles.has(tileKey(trigger.x, trigger.y))) {
-                        continue;
+                if (directionList) {
+                    for (const direction of directionList) {
+                        const offset = DIRECTIONS[direction];
+                        portals.push({
+                            kind: 'wall',
+                            wall: { x, y },
+                            trigger: { x: x + offset.x, y: y + offset.y },
+                            direction,
+                            surface: portalSurface(direction),
+                        });
                     }
-
-                    candidates.push({
-                        kind: 'wall',
-                        wall: { x, y },
-                        trigger,
-                        direction: side.direction,
-                        surface: side.surface,
-                    });
                 }
             }
+            walls.push(wallRow);
         }
 
-        const selected = [];
-        for (const candidate of shuffle(candidates)) {
-            if (selected.some((portal) =>
-                tileKey(portal.trigger.x, portal.trigger.y)
-                    === tileKey(candidate.trigger.x, candidate.trigger.y))) {
-                continue;
+        if (!player || !boss) {
+            throw new Error(`${path} must contain exactly one [p] and one [b] tile.`);
+        }
+        for (const portal of portals) {
+            const { x, y } = portal.trigger;
+            if (x < 0 || y < 0 || x >= columns || y >= rows.length
+                || walls[y][x] || waterTiles.has(tileKey(x, y))) {
+                throw new Error(`${path} has a teleport facing a non-walkable tile at row ${portal.wall.y + 1}, column ${portal.wall.x + 1}.`);
             }
-            selected.push(candidate);
-            if (selected.length === PORTAL_COUNT) break;
         }
-        game.portals = selected;
-    }
+        if (portals.length % 2 !== 0) {
+            throw new Error(`${path} must contain an even number of teleport sides so each can be paired.`);
+        }
+        portals.forEach((portal, index) => {
+            portal.pairId = Math.floor(index / 2);
+        });
 
-    function isPortalWalkableTile(x, y) {
-        return isWalkable(x, y)
-            && !isCharacterAt(game.player, x, y)
-            && !isCharacterAt(game.boss, x, y);
+        return {
+            columns,
+            rows: rows.length,
+            walls,
+            waterTiles,
+            waterRotations,
+            portals,
+            player,
+            boss,
+        };
     }
 
     function createPortalElement(className, sprite) {
@@ -327,7 +300,8 @@
     }
 
     function pairedPortal(portal) {
-        return game.portals.find((item) => item !== portal);
+        return game.portals.find((item) =>
+            item !== portal && item.pairId === portal.pairId);
     }
 
     function isInsideField(x, y) {
@@ -899,7 +873,6 @@
         const previousColumns = game.columns;
         const previousRows = game.rows;
         chooseDimensions();
-
         if (game.columns !== previousColumns || game.rows !== previousRows) {
             const rotationTurns = game.columns > previousColumns ? 1 : -1;
             rotateLevel(previousColumns, previousRows, rotationTurns);
@@ -1136,9 +1109,24 @@
             `url("${canvas.toDataURL('image/png')}")`,
         );
 
+        const level = await loadRandomLevel();
+        game.columns = level.columns;
+        game.rows = level.rows;
+        game.walls = level.walls;
+        game.waterTiles = level.waterTiles;
+        game.waterRotations = level.waterRotations;
+        game.portals = level.portals;
+        game.player = level.player;
+        game.boss = level.boss;
+
         bindControls();
+        const levelColumns = game.columns;
+        const levelRows = game.rows;
         chooseDimensions();
-        generateLevel();
+        if (game.columns !== levelColumns || game.rows !== levelRows) {
+            const rotationTurns = game.columns > levelColumns ? 1 : -1;
+            rotateLevel(levelColumns, levelRows, rotationTurns);
+        }
         renderLevel();
         updateDebugStatus();
         if (window.DeviceOrientationEvent
@@ -1153,5 +1141,8 @@
         setInterval(moveBoss, BOSS_STEP_MS);
     }
 
-    start();
+    start().catch((error) => {
+        console.error('Unable to start the game:', error);
+        elements.field.textContent = 'Unable to load a playable level.';
+    });
 })();
