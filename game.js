@@ -7,7 +7,8 @@
     const LEVEL_FILES = Array.from({ length: 5 }, (_, index) =>
         `levels/dev${String(index + 1).padStart(3, '0')}.csv`);
     const WATER_ROTATIONS = [0, 90, 180, 270];
-    const WATER_SPEED_FACTOR = 0.67;
+    const CHARACTER_SPEED_FACTOR = 0.67;
+    const WATER_SPEED_FACTOR = 0.6;
     const BOSS_STEP_MS = 750;
     const JOYSTICK_STEP_MS = 320;
     const BOSS_FIRE_CHANCE = 0.25;
@@ -98,6 +99,7 @@
         columns: 8,
         rows: 16,
         walls: [],
+        voidTiles: new Set(),
         waterTiles: new Set(),
         waterRotations: new Map(),
         portals: [],
@@ -113,6 +115,9 @@
         joystickDirection: null,
         shots: { player: null, boss: null },
         moveTimer: null,
+        keyboardMoveTimer: null,
+        keyboardDirection: null,
+        bossTimer: null,
         resizeTimer: null,
         playerSprite: null,
         bossPiece: null,
@@ -127,6 +132,14 @@
         element.style.backgroundImage = 'var(--sprite-sheet)';
         element.style.backgroundSize = `${scaleWidth}% auto`;
         element.style.backgroundPosition = `${positionX}% ${positionY}%`;
+    }
+
+    function movementSpeedFactor(isOnWater) {
+        return CHARACTER_SPEED_FACTOR * (isOnWater ? WATER_SPEED_FACTOR : 1);
+    }
+
+    function movementDuration(baseDuration, isOnWater) {
+        return baseDuration / movementSpeedFactor(isOnWater);
     }
 
     function tileKey(x, y) {
@@ -195,6 +208,7 @@
         }
 
         const walls = [];
+        const voidTiles = new Set();
         const waterTiles = new Set();
         const waterRotations = new Map();
         const portals = [];
@@ -207,6 +221,10 @@
             '/w\\': ['u'],
             '\\w/': ['d'],
             '/w/': ['u', 'd'],
+            '/w>': ['u', 'r'],
+            '<w\\': ['u', 'l'],
+            '<w/': ['l', 'd'],
+            '\\w>': ['d', 'r'],
         };
 
         for (let y = 0; y < rows.length; y++) {
@@ -214,13 +232,15 @@
             for (let x = 0; x < columns; x++) {
                 const token = rows[y][x];
                 const directionList = portalDirections[token];
-                if (!['p', 'b', 'w', 't', 's'].includes(token) && !directionList) {
+                if (!['_', 'p', 'b', 'w', 't', 's'].includes(token) && !directionList) {
                     throw new Error(`${path} has unknown tile "${token}" at row ${y + 1}, column ${x + 1}.`);
                 }
 
                 const isWall = token === 'w' || Boolean(directionList);
                 wallRow.push(isWall);
-                if (token === 'p') {
+                if (token === '_') {
+                    voidTiles.add(tileKey(x, y));
+                } else if (token === 'p') {
                     if (player) throw new Error(`${path} must contain exactly one [p] tile.`);
                     player = { x, y, direction: 'r' };
                 } else if (token === 'b') {
@@ -254,7 +274,8 @@
         for (const portal of portals) {
             const { x, y } = portal.trigger;
             if (x < 0 || y < 0 || x >= columns || y >= rows.length
-                || walls[y][x] || waterTiles.has(tileKey(x, y))) {
+                || walls[y][x] || voidTiles.has(tileKey(x, y))
+                || waterTiles.has(tileKey(x, y))) {
                 throw new Error(`${path} has a teleport facing a non-walkable tile at row ${portal.wall.y + 1}, column ${portal.wall.x + 1}.`);
             }
         }
@@ -269,6 +290,7 @@
             columns,
             rows: rows.length,
             walls,
+            voidTiles,
             waterTiles,
             waterRotations,
             portals,
@@ -309,7 +331,9 @@
     }
 
     function isWalkable(x, y) {
-        return isInsideField(x, y) && !game.walls[y][x];
+        return isInsideField(x, y)
+            && !game.walls[y][x]
+            && !game.voidTiles.has(tileKey(x, y));
     }
 
     // DOM rendering.
@@ -323,6 +347,8 @@
                 const cell = createCell(x, y);
                 game.cells.push(cell);
                 fragment.append(cell);
+
+                if (game.voidTiles.has(tileKey(x, y))) continue;
 
                 if (game.walls[y][x]) {
                     const wall = createWallSprite(x, y);
@@ -351,6 +377,10 @@
         const key = tileKey(x, y);
         cell.className = 'cell';
         cell.setAttribute('role', 'gridcell');
+        if (game.voidTiles.has(key)) {
+            cell.classList.add('void-cell');
+            return cell;
+        }
         setAtlasSprite(cell, SPRITES.floor, TILE_SIZE);
 
         if (game.waterTiles.has(key)) {
@@ -448,7 +478,7 @@
             setPlayerDirection(direction);
         }
 
-        const startsOnWater = game.waterTiles.has(tileKey(game.player.x, game.player.y));
+        const moveDuration = getPlayerMoveDelay();
         const nextX = game.player.x + vector.x;
         const nextY = game.player.y + vector.y;
         const move = resolvePortalMove(
@@ -486,7 +516,7 @@
             game.player.y = move.y;
             rotateWaterAt(move.x, move.y);
             game.playerPortalLock = null;
-            game.playerSprite.style.transitionDuration = startsOnWater ? '390ms' : '260ms';
+            game.playerSprite.style.transitionDuration = `${moveDuration}ms`;
         } else if (game.playerPortalLock) {
             game.playerPortalLock = null;
         }
@@ -630,11 +660,13 @@
             return;
         }
 
+        const startsOnWater = game.waterTiles.has(tileKey(game.boss.x, game.boss.y));
         game.boss.x = next.x;
         game.boss.y = next.y;
         game.bossPortalLock = null;
         game.boss.direction = next.direction;
-        game.bossPiece.style.transitionDuration = '150ms';
+        game.bossPiece.style.transitionDuration =
+            `${movementDuration(150, startsOnWater)}ms`;
         rotateWaterAt(next.x, next.y);
         updateEntities();
     }
@@ -791,7 +823,15 @@
 
     function getPlayerMoveDelay() {
         const isOnWater = game.waterTiles.has(tileKey(game.player.x, game.player.y));
-        return isOnWater ? JOYSTICK_STEP_MS / WATER_SPEED_FACTOR : JOYSTICK_STEP_MS;
+        return JOYSTICK_STEP_MS / movementSpeedFactor(isOnWater);
+    }
+
+    function scheduleBossMove() {
+        const isOnWater = game.waterTiles.has(tileKey(game.boss.x, game.boss.y));
+        game.bossTimer = setTimeout(() => {
+            moveBoss();
+            scheduleBossMove();
+        }, BOSS_STEP_MS / movementSpeedFactor(isOnWater));
     }
 
     function scheduleJoystickMove() {
@@ -800,6 +840,20 @@
             movePlayer(game.joystickDirection);
             scheduleJoystickMove();
         }, getPlayerMoveDelay());
+    }
+
+    function scheduleKeyboardMove() {
+        game.keyboardMoveTimer = setTimeout(() => {
+            if (!game.keyboardDirection) return;
+            movePlayer(game.keyboardDirection);
+            scheduleKeyboardMove();
+        }, getPlayerMoveDelay());
+    }
+
+    function clearKeyboardMove() {
+        if (game.keyboardMoveTimer) clearTimeout(game.keyboardMoveTimer);
+        game.keyboardMoveTimer = null;
+        game.keyboardDirection = null;
     }
 
     function directionFromVector(x, y) {
@@ -858,13 +912,25 @@
         const moveDirection = MOVE_KEYS[event.code];
         const turnDirection = TURN_KEYS[event.code];
 
-        if (moveDirection || turnDirection) {
+        if (moveDirection) {
             event.preventDefault();
-            if (moveDirection) movePlayer(moveDirection);
-            else toggleAimDirection(turnDirection);
+            if (event.repeat) return;
+            clearKeyboardMove();
+            game.keyboardDirection = moveDirection;
+            movePlayer(moveDirection);
+            scheduleKeyboardMove();
+        } else if (turnDirection) {
+            event.preventDefault();
+            if (!event.repeat) toggleAimDirection(turnDirection);
         } else if (event.code === 'Space') {
             event.preventDefault();
-            firePlayer();
+            if (!event.repeat) firePlayer();
+        }
+    }
+
+    function handleKeyUp(event) {
+        if (MOVE_KEYS[event.code] === game.keyboardDirection) {
+            clearKeyboardMove();
         }
     }
 
@@ -907,6 +973,13 @@
         }
 
         game.walls = rotatedWalls;
+        game.voidTiles = new Set(
+            [...game.voidTiles].map((key) => {
+                const [x, y] = key.split(',').map(Number);
+                const rotated = rotatePosition({ x, y });
+                return tileKey(rotated.x, rotated.y);
+            }),
+        );
         game.player = {
             ...rotatePosition(game.player),
             direction: rotateDirection(game.player.direction, rotationTurns),
@@ -1066,7 +1139,6 @@
                 toggleAimDirection(button.dataset.direction);
             });
         }
-
         elements.fireButton.addEventListener('pointerdown', (event) => {
             event.preventDefault();
             firePlayer();
@@ -1077,6 +1149,8 @@
             document.removeEventListener('pointerdown', startImmersiveMode);
         });
         document.addEventListener('keydown', handleKeyDown);
+        document.addEventListener('keyup', handleKeyUp);
+        window.addEventListener('blur', clearKeyboardMove);
         document.addEventListener('pointerdown', startImmersiveMode);
         window.addEventListener('resize', scheduleResize);
         window.addEventListener('orientationchange', scheduleResize);
@@ -1113,6 +1187,7 @@
         game.columns = level.columns;
         game.rows = level.rows;
         game.walls = level.walls;
+        game.voidTiles = level.voidTiles;
         game.waterTiles = level.waterTiles;
         game.waterRotations = level.waterRotations;
         game.portals = level.portals;
@@ -1138,7 +1213,7 @@
         } else {
             updateDebugStatus('Tilt: unavailable');
         }
-        setInterval(moveBoss, BOSS_STEP_MS);
+        scheduleBossMove();
     }
 
     start().catch((error) => {

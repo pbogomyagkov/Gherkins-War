@@ -74,6 +74,10 @@ button {
     background-repeat: no-repeat;
 }
 
+.cell.void-cell {
+    background: #000;
+}
+
 .water-sprite {
     position: absolute;
     inset: 0;
