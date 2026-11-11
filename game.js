@@ -68,13 +68,6 @@
         },
     };
 
-    const PORTAL_SPRITES = {
-        front: [{ name: 'down', className: 'wall-portal-down' }],
-        left: [{ name: 'left', className: 'wall-portal-left' }],
-        right: [{ name: 'right', className: 'wall-portal-right' }],
-        back: [{ name: 'up', className: 'wall-portal-up' }],
-    };
-
     // Bounds are measured from each source sprite; bodyCenterX excludes the minigun.
     const BOSS_SPRITE_LAYOUT = {
         d: { width: 60, bodyCenterX: 27, bodyTop: 11 },
@@ -85,7 +78,9 @@
 
     // DOM references and mutable game state.
     const elements = {
+        fieldFrame: document.querySelector('#field-frame'),
         field: document.querySelector('#field'),
+        fieldContext: document.querySelector('#field').getContext('2d'),
         joystick: document.querySelector('#joystick'),
         stickKnob: document.querySelector('#stick-knob'),
         aimButtons: [...document.querySelectorAll('.aim-direction')],
@@ -103,7 +98,6 @@
         waterTiles: new Set(),
         waterRotations: new Map(),
         portals: [],
-        cells: [],
         player: { x: 0, y: 0, direction: 'u' },
         boss: { x: 0, y: 0, direction: 'd' },
         isJoystickHeld: false,
@@ -119,21 +113,17 @@
         keyboardDirection: null,
         bossTimer: null,
         resizeTimer: null,
-        playerSprite: null,
-        bossPiece: null,
-        bossSprite: null,
+        spriteSheet: null,
+        cellWidth: 0,
+        cellHeight: 0,
+        canvasTopPadding: 0,
+        animationFrame: null,
+        characterAnimations: { player: null, boss: null },
+        tiltSide: null,
+        tiltEdgeWidth: 0,
     };
 
     // Shared tile and randomization helpers.
-    function setAtlasSprite(element, sprite, visibleHeight = sprite.height) {
-        const scaleWidth = SPRITE_SHEET_SIZE / sprite.width * 100;
-        const positionX = sprite.x / (SPRITE_SHEET_SIZE - sprite.width) * 100;
-        const positionY = sprite.y / (SPRITE_SHEET_SIZE - visibleHeight) * 100;
-        element.style.backgroundImage = 'var(--sprite-sheet)';
-        element.style.backgroundSize = `${scaleWidth}% auto`;
-        element.style.backgroundPosition = `${positionX}% ${positionY}%`;
-    }
-
     function movementSpeedFactor(isOnWater) {
         return CHARACTER_SPEED_FACTOR * (isOnWater ? WATER_SPEED_FACTOR : 1);
     }
@@ -144,6 +134,26 @@
 
     function tileKey(x, y) {
         return `${x},${y}`;
+    }
+
+    function cubicBezierProgress(progress, x1, y1, x2, y2) {
+        let lower = 0;
+        let upper = 1;
+        let parameter = progress;
+        for (let iteration = 0; iteration < 8; iteration++) {
+            const inverse = 1 - parameter;
+            const x = 3 * inverse ** 2 * parameter * x1
+                + 3 * inverse * parameter ** 2 * x2
+                + parameter ** 3;
+            if (Math.abs(x - progress) < 0.001) break;
+            if (x < progress) lower = parameter;
+            else upper = parameter;
+            parameter = (lower + upper) / 2;
+        }
+        const inverse = 1 - parameter;
+        return 3 * inverse ** 2 * parameter * y1
+            + 3 * inverse * parameter ** 2 * y2
+            + parameter ** 3;
     }
 
     function isCharacterAt(character, x, y) {
@@ -160,11 +170,6 @@
         game.columns = isLandscape ? 16 : 8;
         game.rows = isLandscape ? 8 : 16;
 
-        elements.field.style.gridTemplateColumns = `repeat(${game.columns}, minmax(0, 1fr))`;
-        elements.field.style.gridTemplateRows = `repeat(${game.rows}, minmax(0, 1fr))`;
-        elements.field.style.setProperty('--cell-width', `${100 / game.columns}%`);
-        elements.field.style.setProperty('--cell-height', `${100 / game.rows}%`);
-
         const tileSize = Math.max(1, Math.floor(Math.min(
             (window.innerWidth - 16) / game.columns,
             (window.innerHeight - 16) / game.rows,
@@ -172,10 +177,15 @@
         const fieldWidth = tileSize * game.columns;
         const fieldHeight = tileSize * game.rows;
         const topGap = Math.max(0, (window.innerHeight - fieldHeight) / 2);
+        game.canvasTopPadding = tileSize * 0.3;
 
-        elements.field.style.width = `${fieldWidth}px`;
-        elements.field.style.height = `${fieldHeight}px`;
-        elements.field.style.marginTop = `${topGap}px`;
+        elements.fieldFrame.style.width = `${fieldWidth}px`;
+        elements.fieldFrame.style.height = `${fieldHeight}px`;
+        elements.fieldFrame.style.marginTop = `${topGap}px`;
+        elements.field.style.height =
+            `${fieldHeight - 2 + game.canvasTopPadding}px`;
+        elements.field.style.top = `${-game.canvasTopPadding}px`;
+        resizeCanvas();
     }
 
     async function loadRandomLevel() {
@@ -299,19 +309,6 @@
         };
     }
 
-    function createPortalElement(className, sprite) {
-        const portal = document.createElement('span');
-        portal.className = `wall-portal ${className}`;
-        portal.setAttribute('aria-hidden', 'true');
-        setAtlasSprite(portal, sprite);
-        return portal;
-    }
-
-    function createPortalElements(surface) {
-        return PORTAL_SPRITES[surface].map(({ name, className }) =>
-            createPortalElement(className, SPRITES.portal[name]));
-    }
-
     function wallPortalAt(x, y, movement) {
         return game.portals.find((portal) =>
             portal.kind === 'wall'
@@ -336,126 +333,324 @@
             && !game.voidTiles.has(tileKey(x, y));
     }
 
-    // DOM rendering.
+    // Canvas rendering.
     function renderLevel() {
         clearShots();
-        const fragment = document.createDocumentFragment();
-        game.cells = [];
-
-        for (let y = 0; y < game.rows; y++) {
-            for (let x = 0; x < game.columns; x++) {
-                const cell = createCell(x, y);
-                game.cells.push(cell);
-                fragment.append(cell);
-
-                if (game.voidTiles.has(tileKey(x, y))) continue;
-
-                if (game.walls[y][x]) {
-                    const wall = createWallSprite(x, y);
-                    const portals = game.portals.filter((item) =>
-                        item.kind === 'wall' && item.wall.x === x && item.wall.y === y);
-                    for (const portal of portals) {
-                        wall.classList.add(`wall-has-portal-${portal.surface}`);
-                        wall.append(...createPortalElements(portal.surface));
-                    }
-                    fragment.append(wall);
-                }
-            }
-        }
-
-        createBossPiece();
-        fragment.append(game.bossPiece);
-
-        game.playerSprite = document.createElement('div');
-        game.playerSprite.className = 'entity-piece player-piece';
-        elements.field.replaceChildren(fragment, game.playerSprite);
+        game.characterAnimations = { player: null, boss: null };
         updateEntities();
     }
 
-    function createCell(x, y) {
-        const cell = document.createElement('div');
-        const key = tileKey(x, y);
-        cell.className = 'cell';
-        cell.setAttribute('role', 'gridcell');
-        if (game.voidTiles.has(key)) {
-            cell.classList.add('void-cell');
-            return cell;
+    function resizeCanvas() {
+        const width = elements.field.clientWidth;
+        const height = elements.field.clientHeight;
+        const pixelRatio = window.devicePixelRatio || 1;
+        const pixelWidth = Math.round(width * pixelRatio);
+        const pixelHeight = Math.round(height * pixelRatio);
+        if (elements.field.width !== pixelWidth || elements.field.height !== pixelHeight) {
+            elements.field.width = pixelWidth;
+            elements.field.height = pixelHeight;
         }
-        setAtlasSprite(cell, SPRITES.floor, TILE_SIZE);
-
-        if (game.waterTiles.has(key)) {
-            cell.append(createWaterSprite(game.waterRotations.get(key)));
-        }
-        return cell;
-    }
-
-    function createWaterSprite(rotation) {
-        const sprite = document.createElement('div');
-        sprite.className = 'water-sprite';
-        setAtlasSprite(sprite, SPRITES.water);
-        sprite.style.setProperty('--water-rotation', `${rotation}deg`);
-        return sprite;
-    }
-
-    function createWallSprite(x, y) {
-        const wall = document.createElement('div');
-        const hasOpenLeft = x === 0 || !game.walls[y][x - 1];
-        const hasOpenRight = x === game.columns - 1 || !game.walls[y][x + 1];
-        wall.className = [
-            'wall-sprite',
-            hasOpenLeft && 'wall-edge-left',
-            hasOpenRight && 'wall-edge-right',
-        ].filter(Boolean).join(' ');
-        const top = document.createElement('span');
-        top.className = 'wall-top-sprite';
-        setAtlasSprite(top, SPRITES.wallTop);
-        const front = document.createElement('span');
-        front.className = 'wall-front-sprite';
-        setAtlasSprite(front, SPRITES.wallFront, TILE_SIZE / 3);
-        wall.append(top, front);
-        wall.style.left = `${x * 100 / game.columns}%`;
-        wall.style.top = `${(y - 0.3) * 100 / game.rows}%`;
-        wall.style.width = `${100 / game.columns}%`;
-        wall.style.height = `${100 / game.rows * 100 / TILE_SIZE}%`;
-        wall.style.zIndex = String(y * 4 + 3);
-        return wall;
-    }
-
-    function createBossPiece() {
-        game.bossPiece = document.createElement('div');
-        game.bossPiece.className = 'entity-piece boss-piece';
-        game.bossSprite = document.createElement('div');
-        game.bossSprite.className = 'boss-sprite';
-        game.bossPiece.append(game.bossSprite);
+        elements.fieldContext.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+        game.cellWidth = width / game.columns;
+        game.cellHeight = (height - game.canvasTopPadding) / game.rows;
     }
 
     function updateEntities() {
-        game.playerSprite.style.left = `${game.player.x * 100 / game.columns}%`;
-        game.playerSprite.style.top = `${(game.player.y - 0.3) * 100 / game.rows}%`;
-        setAtlasSprite(game.playerSprite, SPRITES.player[game.player.direction]);
-        game.playerSprite.style.zIndex = String(game.player.y * 4 + 2);
-
-        game.bossPiece.style.left = `${game.boss.x * 100 / game.columns}%`;
-        game.bossPiece.style.top = `${(game.boss.y - 0.3) * 100 / game.rows}%`;
-        game.bossPiece.style.zIndex = String(game.boss.y * 4 + 2);
-        updateBossSprite();
-
         for (const button of elements.aimButtons) {
             const isSelected = button.dataset.direction === game.lockedDirection;
             button.classList.toggle('selected', isSelected);
             button.setAttribute('aria-pressed', String(isSelected));
         }
+        drawField();
     }
 
-    function updateBossSprite() {
-        const layout = BOSS_SPRITE_LAYOUT[game.boss.direction];
-        const sprite = SPRITES.boss[game.boss.direction];
-        setAtlasSprite(game.bossSprite, sprite);
-        game.bossSprite.style.aspectRatio = `${sprite.width} / ${sprite.height}`;
-        game.bossSprite.style.width = `${layout.width / TILE_SIZE * 100}%`;
-        game.bossSprite.style.left =
-            `${(TILE_SIZE / 2 - layout.bodyCenterX) / TILE_SIZE * 100}%`;
-        game.bossSprite.style.top = `${-(layout.bodyTop - 11) / TILE_SIZE / 1.3 * 100}%`;
+    function drawSprite(sprite, x, y, width, height) {
+        elements.fieldContext.drawImage(
+            game.spriteSheet,
+            sprite.x,
+            sprite.y,
+            sprite.width,
+            sprite.height,
+            x,
+            y,
+            width,
+            height,
+        );
+    }
+
+    function drawField(now = performance.now()) {
+        if (!game.spriteSheet) return;
+        if (game.animationFrame !== null) {
+            cancelAnimationFrame(game.animationFrame);
+            game.animationFrame = null;
+        }
+        advanceCharacterAnimations(now);
+        const context = elements.fieldContext;
+        const width = elements.field.clientWidth;
+        const height = elements.field.clientHeight;
+        context.clearRect(0, 0, width, height);
+        context.save();
+        context.translate(0, game.canvasTopPadding);
+        context.fillStyle = '#27d532';
+        context.fillRect(0, 0, width, game.cellHeight * game.rows);
+
+        for (let y = 0; y < game.rows; y++) {
+            for (let x = 0; x < game.columns; x++) {
+                const left = x * game.cellWidth;
+                const top = y * game.cellHeight;
+                const key = tileKey(x, y);
+                if (game.voidTiles.has(key)) {
+                    context.fillStyle = '#000';
+                    context.fillRect(left, top, game.cellWidth, game.cellHeight);
+                    continue;
+                }
+
+                drawSprite(SPRITES.floor, left, top, game.cellWidth, game.cellHeight);
+                if (game.waterTiles.has(key)) {
+                    context.save();
+                    context.beginPath();
+                    context.rect(left, top, game.cellWidth, game.cellHeight);
+                    context.clip();
+                    context.translate(left + game.cellWidth / 2, top + game.cellHeight / 2);
+                    context.rotate(game.waterRotations.get(key) * Math.PI / 180);
+                    drawSprite(
+                        SPRITES.water,
+                        -game.cellWidth / 2,
+                        -game.cellHeight / 2,
+                        game.cellWidth,
+                        game.cellHeight,
+                    );
+                    context.restore();
+                }
+            }
+        }
+
+        drawTopBoundary();
+        drawShot('player');
+        drawShot('boss');
+        const depthLayers = [];
+        for (let y = 0; y < game.rows; y++) {
+            for (let x = 0; x < game.columns; x++) {
+                if (game.walls[y][x]) {
+                    depthLayers.push({
+                        depth: y * 4 + 3,
+                        draw: () => drawWall(x, y),
+                    });
+                }
+            }
+        }
+        for (const type of ['boss', 'player']) {
+            const visual = getCharacterVisual(type, now);
+            depthLayers.push({
+                depth: visual.y * 4 + 2,
+                draw: () => drawCharacter(type, now, visual),
+            });
+        }
+        depthLayers.sort((first, second) => first.depth - second.depth);
+        for (const layer of depthLayers) layer.draw();
+        context.restore();
+
+        if (Object.values(game.characterAnimations).some(Boolean)) {
+            game.animationFrame = requestAnimationFrame(drawField);
+        }
+    }
+
+    function drawTopBoundary() {
+        for (let x = 0; x < game.columns; x++) {
+            drawSprite(
+                SPRITES.wallFront,
+                x * game.cellWidth,
+                -game.canvasTopPadding,
+                game.cellWidth,
+                game.canvasTopPadding,
+            );
+        }
+    }
+
+    function drawWall(x, y) {
+        const context = elements.fieldContext;
+        const left = x * game.cellWidth;
+        const top = (y - 0.3) * game.cellHeight;
+        const wallHeight = game.cellHeight * 100 / TILE_SIZE;
+        context.fillStyle = '#a5aaa5';
+        context.fillRect(left, top, game.cellWidth, game.cellHeight);
+        context.fillStyle = '#555b55';
+        context.fillRect(left, top + game.cellHeight, game.cellWidth, wallHeight * 0.2);
+        drawSprite(SPRITES.wallTop, left, top, game.cellWidth, game.cellHeight);
+        drawSprite(
+            SPRITES.wallFront,
+            left,
+            top + game.cellHeight,
+            game.cellWidth,
+            wallHeight * 0.2,
+        );
+
+        for (const portal of game.portals) {
+            if (portal.kind !== 'wall' || portal.wall.x !== x || portal.wall.y !== y) continue;
+            if (portal.direction === 'l' || portal.direction === 'r') {
+                const isLeft = portal.direction === 'l';
+                drawSprite(
+                    SPRITES.portal[isLeft ? 'left' : 'right'],
+                    left + (isLeft ? -game.cellWidth / 3 : game.cellWidth),
+                    top,
+                    game.cellWidth / 3,
+                    wallHeight * 0.8,
+                );
+            } else {
+                const isUp = portal.direction === 'u';
+                drawSprite(
+                    SPRITES.portal[isUp ? 'up' : 'down'],
+                    left,
+                    top + wallHeight * (isUp ? -0.4 : 0.6),
+                    game.cellWidth,
+                    wallHeight * 0.6,
+                );
+            }
+        }
+
+        const hasOpenLeft = x === 0 || !game.walls[y][x - 1];
+        const hasOpenRight = x === game.columns - 1 || !game.walls[y][x + 1];
+        if (game.tiltEdgeWidth <= 0) return;
+        const wallEdgeHeight = wallHeight * 0.8;
+        const portalSide = game.portals.some((portal) =>
+            portal.kind === 'wall'
+            && portal.wall.x === x
+            && portal.wall.y === y
+            && portal.direction === (game.tiltSide === 'left' ? 'r' : 'l'));
+        context.fillStyle = portalSide ? '#fff' : '#8a8a8a';
+        if (game.tiltSide === 'left' && hasOpenRight) {
+            context.fillRect(
+                left + game.cellWidth - game.tiltEdgeWidth,
+                top,
+                game.tiltEdgeWidth,
+                wallEdgeHeight,
+            );
+        } else if (game.tiltSide === 'right' && hasOpenLeft) {
+            context.fillRect(left, top, game.tiltEdgeWidth, wallEdgeHeight);
+        }
+    }
+
+    function getCharacterVisual(type, now) {
+        const animation = game.characterAnimations[type];
+        const character = game[type];
+        if (!animation) return { x: character.x, y: character.y, opacity: 1, offsetX: 0, offsetY: 0 };
+        if (animation.kind === 'move') {
+            const progress = Math.min(1, (now - animation.start) / animation.duration);
+            if (progress >= 1) {
+                game.characterAnimations[type] = null;
+                return { x: character.x, y: character.y, opacity: 1, offsetX: 0, offsetY: 0 };
+            }
+            return {
+                x: animation.from.x + (animation.to.x - animation.from.x) * progress,
+                y: animation.from.y + (animation.to.y - animation.from.y) * progress,
+                opacity: 1,
+                offsetX: 0,
+                offsetY: 0,
+            };
+        }
+
+        const progress = Math.min(1, (now - animation.start) / 180);
+        if (animation.phase === 'enter') {
+            const easedProgress = cubicBezierProgress(progress, 0.42, 0, 1, 1);
+            return {
+                x: character.x,
+                y: character.y,
+                opacity: 1 - 0.3 * easedProgress,
+                offsetX: animation.enterX * easedProgress,
+                offsetY: animation.enterY * easedProgress,
+            };
+        }
+        const easedProgress = cubicBezierProgress(progress, 0, 0, 0.58, 1);
+        return {
+            x: character.x,
+            y: character.y,
+            opacity: 0.7 + 0.3 * easedProgress,
+            offsetX: animation.exitX * (1 - easedProgress),
+            offsetY: animation.exitY * (1 - easedProgress),
+        };
+    }
+
+    function advanceCharacterAnimations(now) {
+        for (const type of ['player', 'boss']) {
+            const animation = game.characterAnimations[type];
+            if (!animation || animation.kind !== 'portal') continue;
+            if (animation.phase === 'enter' && now >= animation.start + 180) {
+                animation.onTeleport();
+                animation.phase = 'exit';
+                animation.start += 180;
+            }
+            if (animation.phase === 'exit' && now >= animation.start + 180) {
+                animation.onComplete();
+                game.characterAnimations[type] = null;
+            }
+        }
+    }
+
+    function drawCharacter(type, now, visual = getCharacterVisual(type, now)) {
+        const context = elements.fieldContext;
+        const character = game[type];
+        const left = visual.x * game.cellWidth + visual.offsetX * game.cellWidth;
+        const top = (visual.y - 0.3) * game.cellHeight + visual.offsetY * game.cellHeight;
+        context.save();
+        context.globalAlpha = visual.opacity;
+        context.imageSmoothingEnabled = type !== 'boss';
+        if (type === 'player') {
+            drawSprite(
+                SPRITES.player[character.direction],
+                left,
+                top,
+                game.cellWidth,
+                game.cellHeight,
+            );
+        } else {
+            const layout = BOSS_SPRITE_LAYOUT[character.direction];
+            const sprite = SPRITES.boss[character.direction];
+            const scale = game.cellWidth / TILE_SIZE;
+            drawSprite(
+                sprite,
+                left + (TILE_SIZE / 2 - layout.bodyCenterX) * scale,
+                top + (11 - layout.bodyTop) * scale,
+                layout.width * scale,
+                sprite.height * scale,
+            );
+        }
+        context.restore();
+    }
+
+    function drawShot(owner) {
+        const shot = game.shots[owner];
+        if (!shot) return;
+        const bulletCount = owner === 'boss' ? BOSS_BULLET_COUNT : 1;
+        const color = owner === 'boss' ? '#ff9a4a' : '#c6f36b';
+        const context = elements.fieldContext;
+        for (let bullet = 0; bullet < bulletCount; bullet++) {
+            const position = shot.path[shot.path.length - 1 - bullet * BOSS_BULLET_SPACING];
+            if (!position) continue;
+            const left = position.x * game.cellWidth;
+            const top = position.y * game.cellHeight;
+            context.save();
+            context.fillStyle = owner === 'boss'
+                ? 'rgba(255, 154, 74, .9)'
+                : 'rgba(198, 243, 107, .8)';
+            context.shadowColor = color;
+            context.shadowBlur = owner === 'boss' ? 10 : 14;
+            if (position.direction === 'u' || position.direction === 'd') {
+                context.fillRect(
+                    left + game.cellWidth * 0.46,
+                    top,
+                    game.cellWidth * 0.08,
+                    game.cellHeight,
+                );
+            } else {
+                context.fillRect(
+                    left,
+                    top + game.cellHeight * 0.42,
+                    game.cellWidth,
+                    game.cellHeight * 0.08,
+                );
+            }
+            context.restore();
+        }
     }
 
     function setPlayerDirection(direction) {
@@ -473,7 +668,7 @@
     // Character movement and portal travel.
     function movePlayer(direction) {
         const vector = DIRECTIONS[direction];
-        if (!vector || game.isPlayerTeleporting) return;
+        if (!vector || game.isPlayerTeleporting) return null;
         if (!game.lockedDirection && game.player.direction !== direction) {
             setPlayerDirection(direction);
         }
@@ -490,9 +685,8 @@
         );
         if (move.teleported) {
             game.isPlayerTeleporting = true;
-            game.playerSprite.style.transitionDuration = '0ms';
             animatePortalTravel(
-                game.playerSprite,
+                'player',
                 vector,
                 move.exitDirection,
                 () => {
@@ -501,69 +695,55 @@
                     game.player.direction = game.lockedDirection ?? move.exitDirection;
                     rotateWaterAt(move.x, move.y);
                     game.playerPortalLock = move.portalLock;
-                    updateEntities();
                 },
                 () => {
                     game.isPlayerTeleporting = false;
-                    updateEntities();
+                    resumeHeldPlayerMovement();
                 },
             );
-            return;
+            return 360;
         }
 
         if (move.x !== game.player.x || move.y !== game.player.y) {
+            const visual = getCharacterVisual('player', performance.now());
+            const from = {
+                x: visual.x + visual.offsetX,
+                y: visual.y + visual.offsetY,
+            };
             game.player.x = move.x;
             game.player.y = move.y;
             rotateWaterAt(move.x, move.y);
             game.playerPortalLock = null;
-            game.playerSprite.style.transitionDuration = `${moveDuration}ms`;
+            game.characterAnimations.player = {
+                kind: 'move',
+                from,
+                to: { x: move.x, y: move.y },
+                start: performance.now(),
+                duration: moveDuration,
+            };
         } else if (game.playerPortalLock) {
             game.playerPortalLock = null;
+        } else {
+            return moveDuration;
         }
         updateEntities();
+        return moveDuration;
     }
 
-    function animatePortalTravel(piece, enterVector, exitDirection, onTeleport, onComplete) {
-        const bounds = elements.field.getBoundingClientRect();
-        const offsetX = bounds.width / game.columns * 0.3;
-        const offsetY = bounds.height / game.rows * 0.3;
-        const enterX = enterVector.x * offsetX;
-        const enterY = enterVector.y * offsetY;
+    function animatePortalTravel(type, enterVector, exitDirection, onTeleport, onComplete) {
         const exitVector = DIRECTIONS[exitDirection];
-        const exitX = -exitVector.x * offsetX;
-        const exitY = -exitVector.y * offsetY;
-        const enterState = {
-            opacity: .7,
-            transform: `translate(${enterX}px, ${enterY}px)`,
+        game.characterAnimations[type] = {
+            kind: 'portal',
+            phase: 'enter',
+            start: performance.now(),
+            enterX: enterVector.x * 0.3,
+            enterY: enterVector.y * 0.3,
+            exitX: -exitVector.x * 0.3,
+            exitY: -exitVector.y * 0.3,
+            onTeleport,
+            onComplete,
         };
-        const enterAnimation = piece.animate(
-            [
-                { opacity: 1, transform: 'translate(0, 0)' },
-                enterState,
-            ],
-            { duration: 180, easing: 'ease-in', fill: 'forwards' },
-        );
-        enterAnimation.onfinish = () => {
-            enterAnimation.onfinish = null;
-            onTeleport();
-
-            const exitAnimation = piece.animate(
-                [
-                    {
-                        opacity: .7,
-                        transform: `translate(${exitX}px, ${exitY}px)`,
-                    },
-                    { opacity: 1, transform: 'translate(0, 0)' },
-                ],
-                { duration: 180, easing: 'ease-out' },
-            );
-            enterAnimation.cancel();
-            exitAnimation.onfinish = () => {
-                exitAnimation.onfinish = null;
-                exitAnimation.cancel();
-                onComplete();
-            };
-        };
+        drawField();
     }
 
     function findPortalExit(portal, blockingCharacter) {
@@ -637,11 +817,10 @@
         const next = randomItem(options);
         if (next.teleported) {
             game.isBossTeleporting = true;
-            game.bossPiece.style.transitionDuration = '0ms';
             game.boss.direction = next.direction;
             updateEntities();
             animatePortalTravel(
-                game.bossPiece,
+                'boss',
                 DIRECTIONS[next.direction],
                 next.exitDirection,
                 () => {
@@ -650,23 +829,27 @@
                     game.boss.direction = next.exitDirection;
                     game.bossPortalLock = next.portalLock;
                     rotateWaterAt(next.x, next.y);
-                    updateEntities();
                 },
                 () => {
                     game.isBossTeleporting = false;
-                    updateEntities();
                 },
             );
             return;
         }
 
         const startsOnWater = game.waterTiles.has(tileKey(game.boss.x, game.boss.y));
+        const from = { x: game.boss.x, y: game.boss.y };
         game.boss.x = next.x;
         game.boss.y = next.y;
         game.bossPortalLock = null;
         game.boss.direction = next.direction;
-        game.bossPiece.style.transitionDuration =
-            `${movementDuration(150, startsOnWater)}ms`;
+        game.characterAnimations.boss = {
+            kind: 'move',
+            from,
+            to: { x: next.x, y: next.y },
+            start: performance.now(),
+            duration: movementDuration(150, startsOnWater),
+        };
         rotateWaterAt(next.x, next.y);
         updateEntities();
     }
@@ -698,7 +881,6 @@
             path: [],
             portalLock: null,
             stepMs: owner === 'boss' ? BOSS_SHOT_STEP_MS : PLAYER_SHOT_STEP_MS,
-            cells: [],
             timer: null,
         };
         game.shots[owner] = shot;
@@ -762,28 +944,11 @@
     }
 
     function renderShotPath(owner, shot) {
-        for (const previousCell of shot.cells) {
-            previousCell.classList.remove(`${owner}-beam`, `${owner}-beam-vertical`);
-        }
-        shot.cells = [];
-
-        const bulletCount = owner === 'boss' ? BOSS_BULLET_COUNT : 1;
-        for (let bullet = 0; bullet < bulletCount; bullet++) {
-            const pathIndex = shot.path.length - 1 - bullet * BOSS_BULLET_SPACING;
-            if (pathIndex < 0) continue;
-
-            const position = shot.path[pathIndex];
-            const cell = game.cells[position.y * game.columns + position.x];
-            cell.classList.add(`${owner}-beam`);
-            if (position.direction === 'u' || position.direction === 'd') {
-                cell.classList.add(`${owner}-beam-vertical`);
-            }
-            shot.cells.push(cell);
-        }
+        drawField();
     }
 
     function finishShot(owner, shot) {
-        if (shot.cells.length) {
+        if (shot.path.length) {
             shot.timer = setTimeout(() => clearShot(owner), SHOT_FADE_MS);
         } else {
             clearShot(owner);
@@ -795,10 +960,8 @@
         if (!shot) return;
 
         clearTimeout(shot.timer);
-        for (const cell of shot.cells) {
-            cell.classList.remove(`${owner}-beam`, `${owner}-beam-vertical`);
-        }
         game.shots[owner] = null;
+        drawField();
     }
 
     function clearShots() {
@@ -816,9 +979,6 @@
             WATER_ROTATIONS.filter((rotation) => rotation !== previousRotation),
         );
         game.waterRotations.set(key, nextRotation);
-        game.cells[y * game.columns + x]
-            .querySelector('.water-sprite')
-            .style.setProperty('--water-rotation', `${nextRotation}deg`);
     }
 
     function getPlayerMoveDelay() {
@@ -834,20 +994,31 @@
         }, BOSS_STEP_MS / movementSpeedFactor(isOnWater));
     }
 
-    function scheduleJoystickMove() {
+    function scheduleJoystickMove(delay = getPlayerMoveDelay()) {
         game.moveTimer = setTimeout(() => {
             if (!game.isJoystickHeld || !game.joystickDirection) return;
-            movePlayer(game.joystickDirection);
-            scheduleJoystickMove();
-        }, getPlayerMoveDelay());
+            const nextDelay = movePlayer(game.joystickDirection) ?? getPlayerMoveDelay();
+            scheduleJoystickMove(nextDelay);
+        }, delay);
     }
 
-    function scheduleKeyboardMove() {
+    function scheduleKeyboardMove(delay = getPlayerMoveDelay()) {
         game.keyboardMoveTimer = setTimeout(() => {
             if (!game.keyboardDirection) return;
-            movePlayer(game.keyboardDirection);
-            scheduleKeyboardMove();
-        }, getPlayerMoveDelay());
+            const nextDelay = movePlayer(game.keyboardDirection) ?? getPlayerMoveDelay();
+            scheduleKeyboardMove(nextDelay);
+        }, delay);
+    }
+
+    function resumeHeldPlayerMovement() {
+        if (game.isJoystickHeld && game.joystickDirection) {
+            clearJoystickMove();
+            scheduleJoystickMove(0);
+        } else if (game.keyboardDirection) {
+            clearTimeout(game.keyboardMoveTimer);
+            game.keyboardMoveTimer = null;
+            scheduleKeyboardMove(0);
+        }
     }
 
     function clearKeyboardMove() {
@@ -890,10 +1061,11 @@
         const directionChanged = direction !== game.joystickDirection;
         if (directionChanged) clearJoystickMove();
         game.joystickDirection = direction;
+        let moveDelay = getPlayerMoveDelay();
         if (directionChanged) {
-            movePlayer(direction);
+            moveDelay = movePlayer(direction) ?? moveDelay;
         }
-        if (directionChanged || game.moveTimer === null) scheduleJoystickMove();
+        if (directionChanged || game.moveTimer === null) scheduleJoystickMove(moveDelay);
     }
 
     function clearJoystickMove() {
@@ -917,8 +1089,8 @@
             if (event.repeat) return;
             clearKeyboardMove();
             game.keyboardDirection = moveDirection;
-            movePlayer(moveDirection);
-            scheduleKeyboardMove();
+            const moveDelay = movePlayer(moveDirection) ?? getPlayerMoveDelay();
+            scheduleKeyboardMove(moveDelay);
         } else if (turnDirection) {
             event.preventDefault();
             if (!event.repeat) toggleAimDirection(turnDirection);
@@ -943,6 +1115,8 @@
             const rotationTurns = game.columns > previousColumns ? 1 : -1;
             rotateLevel(previousColumns, previousRows, rotationTurns);
             renderLevel();
+        } else {
+            drawField();
         }
         updateDebugStatus();
     }
@@ -1102,9 +1276,13 @@
             : (tiltStrength - MIN_TILT_ANGLE)
                 / (MAX_TILT_ANGLE - MIN_TILT_ANGLE) * 2;
 
-        elements.field.classList.toggle('tilt-left', tilt < -MIN_TILT_ANGLE);
-        elements.field.classList.toggle('tilt-right', tilt > MIN_TILT_ANGLE);
-        elements.field.style.setProperty('--wall-edge-width', `${edgeWidth}px`);
+        game.tiltSide = tilt < -MIN_TILT_ANGLE
+            ? 'left'
+            : tilt > MIN_TILT_ANGLE
+                ? 'right'
+                : null;
+        game.tiltEdgeWidth = edgeWidth;
+        drawField();
         const tiltLabel = tilt < -MIN_TILT_ANGLE
             ? 'Tilt: left'
             : tilt > MIN_TILT_ANGLE
@@ -1178,10 +1356,7 @@
             }
         }
         context.putImageData(imageData, 0, 0);
-        document.documentElement.style.setProperty(
-            '--sprite-sheet',
-            `url("${canvas.toDataURL('image/png')}")`,
-        );
+        game.spriteSheet = canvas;
 
         const level = await loadRandomLevel();
         game.columns = level.columns;
@@ -1203,6 +1378,7 @@
             rotateLevel(levelColumns, levelRows, rotationTurns);
         }
         renderLevel();
+        requestAnimationFrame(drawField);
         updateDebugStatus();
         if (window.DeviceOrientationEvent
             && typeof window.DeviceOrientationEvent.requestPermission === 'function') {
@@ -1218,6 +1394,19 @@
 
     start().catch((error) => {
         console.error('Unable to start the game:', error);
-        elements.field.textContent = 'Unable to load a playable level.';
+        elements.field.setAttribute('aria-label', 'Unable to load a playable level.');
+        const context = elements.fieldContext;
+        context.fillStyle = '#18251a';
+        const width = elements.field.clientWidth || elements.field.width;
+        const height = elements.field.clientHeight || elements.field.height;
+        context.fillRect(0, 0, width, height);
+        context.fillStyle = '#f3f5e8';
+        context.font = '16px system-ui, sans-serif';
+        context.textAlign = 'center';
+        context.fillText(
+            'Unable to load a playable level.',
+            width / 2,
+            height / 2,
+        );
     });
 })();

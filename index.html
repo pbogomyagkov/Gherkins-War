@@ -9,12 +9,14 @@
     <meta name="apple-mobile-web-app-title" content="Gherkins War">
     <link rel="icon" href="assets/apple-touch-icon.png" type="image/png" sizes="180x180">
     <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" sizes="180x180">
-    <link rel="stylesheet" href="style.css?v=46">
+    <link rel="stylesheet" href="style.css?v=50">
 </head>
 <body>
     <main class="game" aria-label="Gherkins War mobile game">
         <section class="arena" aria-label="Game field">
-            <div id="field" class="field" role="grid" aria-label="Game map"></div>
+            <div id="field-frame" class="field-frame">
+                <canvas id="field" class="field" role="img" aria-label="Game map"></canvas>
+            </div>
         </section>
 
         <div class="controls" aria-label="Game controls">
@@ -46,6 +48,6 @@
             </div>
         </div>
     </main>
-    <script src="game.js?v=43"></script>
+    <script src="game.js?v=47"></script>
 </body>
 </html>

@@ -53,186 +53,20 @@ button {
     padding: 0 8px;
 }
 
-.field {
+.field-frame {
     position: relative;
     isolation: isolate;
-    display: grid;
-    border: 1px solid rgba(198, 243, 107, .45);
     border-radius: 5px;
     background: #18251a;
-    box-shadow: 0 0 0 5px rgba(198, 243, 107, .035), 0 20px 70px rgba(0, 0, 0, .4);
+    box-shadow: 0 20px 70px rgba(0, 0, 0, .4);
+}
+
+.field {
+    position: absolute;
+    left: 0;
+    display: block;
+    width: 100%;
     touch-action: none;
-}
-
-.cell {
-    position: relative;
-    min-width: 0;
-    min-height: 0;
-    z-index: 0;
-    overflow: hidden;
-    background-color: #27d532;
-    background-repeat: no-repeat;
-}
-
-.cell.void-cell {
-    background: #000;
-}
-
-.water-sprite {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    background-repeat: no-repeat;
-    transform: rotate(var(--water-rotation, 0deg));
-}
-
-.wall-sprite {
-    position: absolute;
-    pointer-events: none;
-}
-
-.wall-top-sprite,
-.wall-front-sprite {
-    position: absolute;
-    left: 0;
-    width: 100%;
-    background-repeat: no-repeat;
-    pointer-events: none;
-}
-
-.wall-top-sprite {
-    top: 0;
-    height: 60%;
-}
-
-.wall-front-sprite {
-    top: 60%;
-    height: 20%;
-}
-
-.wall-sprite::after {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 80%;
-    background: transparent;
-    content: "";
-    pointer-events: none;
-}
-
-.field.tilt-left .wall-edge-right::after {
-    background: linear-gradient(
-        to left,
-        var(--tilt-edge-color, #8a8a8a) var(--wall-edge-width),
-        transparent var(--wall-edge-width)
-    );
-}
-
-.field.tilt-right .wall-edge-left::after {
-    background: linear-gradient(
-        to right,
-        var(--tilt-edge-color, #8a8a8a) var(--wall-edge-width),
-        transparent var(--wall-edge-width)
-    );
-}
-
-.field.tilt-left .wall-edge-right.wall-has-portal-right::after,
-.field.tilt-right .wall-edge-left.wall-has-portal-left::after {
-    --tilt-edge-color: #fff;
-}
-
-.wall-portal {
-    position: absolute;
-    background-repeat: no-repeat;
-    pointer-events: none;
-}
-
-.wall-portal-left,
-.wall-portal-right,
-.wall-portal-up {
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 60%;
-}
-
-.wall-portal-left,
-.wall-portal-right {
-    width: 33.333%;
-    height: 80%;
-}
-
-.wall-portal-left {
-    left: -33.333%;
-}
-
-.wall-portal-up {
-    transform: translateY(-40%);
-}
-
-.wall-portal-right {
-    left: 100%;
-}
-
-.wall-portal-floor {
-    inset: 0;
-}
-
-.wall-portal-down {
-    top: 60%;
-    left: 0;
-    width: 100%;
-    height: 60%;
-}
-
-.entity-piece {
-    position: absolute;
-    width: var(--cell-width);
-    height: var(--cell-height);
-    pointer-events: none;
-}
-
-.player-piece {
-    background-repeat: no-repeat;
-    background-position: center bottom;
-    background-size: contain;
-}
-
-.boss-piece {
-    height: calc(var(--cell-height) * 1.3);
-}
-
-.boss-sprite {
-    position: absolute;
-    image-rendering: pixelated;
-    background-repeat: no-repeat;
-}
-
-.player-piece,
-.boss-piece {
-    transition: top 150ms linear, left 150ms linear;
-}
-
-.cell.player-beam::before,
-.cell.boss-beam::before {
-    position: absolute;
-    z-index: 4;
-    inset: 42% 0 50%;
-    background: rgba(198, 243, 107, .8);
-    box-shadow: 0 0 14px rgba(198, 243, 107, 1);
-    content: "";
-}
-
-.cell.boss-beam::before {
-    background: #ff9a4a;
-    box-shadow: 0 0 10px rgba(255, 154, 74, .9);
-}
-
-.cell.player-beam-vertical::before,
-.cell.boss-beam-vertical::before {
-    inset: 0 46%;
 }
 
 .controls {
@@ -451,7 +285,7 @@ button {
 }
 
 @media (max-height: 430px) and (orientation: landscape) {
-    .field {
+    .field-frame {
         transform: translateY(-2px);
     }
 }
