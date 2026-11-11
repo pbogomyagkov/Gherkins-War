@@ -114,6 +114,7 @@
         bossTimer: null,
         resizeTimer: null,
         spriteSheet: null,
+        terrainCanvas: null,
         cellWidth: 0,
         cellHeight: 0,
         canvasTopPadding: 0,
@@ -121,6 +122,7 @@
         characterAnimations: { player: null, boss: null },
         tiltSide: null,
         tiltEdgeWidth: 0,
+        tiltStatus: null,
     };
 
     // Shared tile and randomization helpers.
@@ -343,7 +345,7 @@
     function resizeCanvas() {
         const width = elements.field.clientWidth;
         const height = elements.field.clientHeight;
-        const pixelRatio = window.devicePixelRatio || 1;
+        const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
         const pixelWidth = Math.round(width * pixelRatio);
         const pixelHeight = Math.round(height * pixelRatio);
         if (elements.field.width !== pixelWidth || elements.field.height !== pixelHeight) {
@@ -351,6 +353,7 @@
             elements.field.height = pixelHeight;
         }
         elements.fieldContext.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+        game.terrainCanvas = null;
         game.cellWidth = width / game.columns;
         game.cellHeight = (height - game.canvasTopPadding) / game.rows;
     }
@@ -389,41 +392,10 @@
         const width = elements.field.clientWidth;
         const height = elements.field.clientHeight;
         context.clearRect(0, 0, width, height);
+        const terrainCanvas = getTerrainCanvas(width, height);
         context.save();
         context.translate(0, game.canvasTopPadding);
-        context.fillStyle = '#27d532';
-        context.fillRect(0, 0, width, game.cellHeight * game.rows);
-
-        for (let y = 0; y < game.rows; y++) {
-            for (let x = 0; x < game.columns; x++) {
-                const left = x * game.cellWidth;
-                const top = y * game.cellHeight;
-                const key = tileKey(x, y);
-                if (game.voidTiles.has(key)) {
-                    context.fillStyle = '#000';
-                    context.fillRect(left, top, game.cellWidth, game.cellHeight);
-                    continue;
-                }
-
-                drawSprite(SPRITES.floor, left, top, game.cellWidth, game.cellHeight);
-                if (game.waterTiles.has(key)) {
-                    context.save();
-                    context.beginPath();
-                    context.rect(left, top, game.cellWidth, game.cellHeight);
-                    context.clip();
-                    context.translate(left + game.cellWidth / 2, top + game.cellHeight / 2);
-                    context.rotate(game.waterRotations.get(key) * Math.PI / 180);
-                    drawSprite(
-                        SPRITES.water,
-                        -game.cellWidth / 2,
-                        -game.cellHeight / 2,
-                        game.cellWidth,
-                        game.cellHeight,
-                    );
-                    context.restore();
-                }
-            }
-        }
+        context.drawImage(terrainCanvas, 0, 0, width, height);
 
         drawTopBoundary();
         drawShot('player');
@@ -453,6 +425,69 @@
         if (Object.values(game.characterAnimations).some(Boolean)) {
             game.animationFrame = requestAnimationFrame(drawField);
         }
+    }
+
+    function getTerrainCanvas(width, height) {
+        if (game.terrainCanvas) return game.terrainCanvas;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = elements.field.width;
+        canvas.height = elements.field.height;
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('Unable to prepare the terrain canvas.');
+
+        const pixelRatio = canvas.width / width;
+        context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+        context.fillStyle = '#27d532';
+        context.fillRect(0, 0, width, game.cellHeight * game.rows);
+
+        for (let y = 0; y < game.rows; y++) {
+            for (let x = 0; x < game.columns; x++) {
+                const left = x * game.cellWidth;
+                const top = y * game.cellHeight;
+                const key = tileKey(x, y);
+                if (game.voidTiles.has(key)) {
+                    context.fillStyle = '#000';
+                    context.fillRect(left, top, game.cellWidth, game.cellHeight);
+                    continue;
+                }
+
+                context.drawImage(
+                    game.spriteSheet,
+                    SPRITES.floor.x,
+                    SPRITES.floor.y,
+                    SPRITES.floor.width,
+                    SPRITES.floor.height,
+                    left,
+                    top,
+                    game.cellWidth,
+                    game.cellHeight,
+                );
+                if (!game.waterTiles.has(key)) continue;
+
+                context.save();
+                context.beginPath();
+                context.rect(left, top, game.cellWidth, game.cellHeight);
+                context.clip();
+                context.translate(left + game.cellWidth / 2, top + game.cellHeight / 2);
+                context.rotate(game.waterRotations.get(key) * Math.PI / 180);
+                context.drawImage(
+                    game.spriteSheet,
+                    SPRITES.water.x,
+                    SPRITES.water.y,
+                    SPRITES.water.width,
+                    SPRITES.water.height,
+                    -game.cellWidth / 2,
+                    -game.cellHeight / 2,
+                    game.cellWidth,
+                    game.cellHeight,
+                );
+                context.restore();
+            }
+        }
+
+        game.terrainCanvas = canvas;
+        return canvas;
     }
 
     function drawTopBoundary() {
@@ -979,6 +1014,7 @@
             WATER_ROTATIONS.filter((rotation) => rotation !== previousRotation),
         );
         game.waterRotations.set(key, nextRotation);
+        game.terrainCanvas = null;
     }
 
     function getPlayerMoveDelay() {
@@ -1123,7 +1159,9 @@
 
     function scheduleResize() {
         clearTimeout(game.resizeTimer);
-        game.resizeTimer = setTimeout(handleResize, 250);
+        game.resizeTimer = setTimeout(() => {
+            requestAnimationFrame(handleResize);
+        }, 250);
     }
 
     function rotateLevel(previousColumns, previousRows, rotationTurns) {
@@ -1215,7 +1253,8 @@
         return 'Landscape';
     }
 
-    function updateDebugStatus(tiltLabel = 'Tilt: waiting for motion') {
+    function updateDebugStatus(tiltLabel = game.tiltStatus ?? 'Tilt: waiting for motion') {
+        game.tiltStatus = tiltLabel;
         elements.debugStatus.value = `${getOrientationLabel()} | ${tiltLabel}`;
     }
 
@@ -1247,8 +1286,7 @@
                 }
             }
 
-            window.addEventListener('deviceorientation', handleTilt);
-            updateDebugStatus('Tilt: waiting for sensor');
+            listenForTilt();
         } catch (error) {
             updateDebugStatus('Tilt: permission unavailable');
             console.info('Device tilt is unavailable:', error);
@@ -1260,15 +1298,19 @@
 
     function handleTilt(event) {
         const gamma = event.gamma;
-        const beta = event.beta ?? 0;
-        if (!Number.isFinite(gamma) || !Number.isFinite(beta)) {
+        const beta = event.beta;
+        if (!Number.isFinite(gamma) && !Number.isFinite(beta)) {
             updateDebugStatus('Tilt: waiting for sensor');
             return;
         }
 
-        const screenAngle = screen.orientation?.angle ?? window.orientation ?? 0;
+        const orientationAngle = screen.orientation?.angle;
+        const screenAngle = Number.isFinite(orientationAngle)
+            ? orientationAngle
+            : Number(window.orientation ?? 0);
         const angle = screenAngle * Math.PI / 180;
-        const horizontalTilt = gamma * Math.cos(angle) - beta * Math.sin(angle);
+        const horizontalTilt = (Number.isFinite(gamma) ? gamma : 0) * Math.cos(angle)
+            - (Number.isFinite(beta) ? beta : 0) * Math.sin(angle);
         const tilt = Math.max(-MAX_TILT_ANGLE, Math.min(MAX_TILT_ANGLE, horizontalTilt));
         const tiltStrength = Math.abs(tilt);
         const edgeWidth = tiltStrength <= MIN_TILT_ANGLE
@@ -1276,19 +1318,30 @@
             : (tiltStrength - MIN_TILT_ANGLE)
                 / (MAX_TILT_ANGLE - MIN_TILT_ANGLE) * 2;
 
-        game.tiltSide = tilt < -MIN_TILT_ANGLE
+        const tiltSide = tilt < -MIN_TILT_ANGLE
             ? 'left'
             : tilt > MIN_TILT_ANGLE
                 ? 'right'
                 : null;
-        game.tiltEdgeWidth = edgeWidth;
-        drawField();
         const tiltLabel = tilt < -MIN_TILT_ANGLE
             ? 'Tilt: left'
             : tilt > MIN_TILT_ANGLE
                 ? 'Tilt: right'
                 : 'Tilt: neutral';
-        updateDebugStatus(tiltLabel);
+        if (game.tiltSide !== tiltSide || Math.abs(game.tiltEdgeWidth - edgeWidth) >= 0.02) {
+            game.tiltSide = tiltSide;
+            game.tiltEdgeWidth = edgeWidth;
+            drawField();
+        }
+        if (game.tiltStatus !== tiltLabel) {
+            updateDebugStatus(tiltLabel);
+        }
+    }
+
+    function listenForTilt() {
+        window.addEventListener('deviceorientation', handleTilt);
+        window.addEventListener('deviceorientationabsolute', handleTilt);
+        updateDebugStatus('Tilt: waiting for sensor');
     }
 
     function startImmersiveMode() {
@@ -1332,7 +1385,8 @@
         document.addEventListener('pointerdown', startImmersiveMode);
         window.addEventListener('resize', scheduleResize);
         window.addEventListener('orientationchange', scheduleResize);
-        screen.orientation?.addEventListener('change', scheduleResize);
+        window.visualViewport?.addEventListener('resize', scheduleResize);
+        screen.orientation?.addEventListener?.('change', scheduleResize);
     }
 
     async function start() {
@@ -1385,7 +1439,7 @@
             elements.motionPrompt.hidden = false;
             elements.motionEnable.focus();
         } else if (window.DeviceOrientationEvent) {
-            window.addEventListener('deviceorientation', handleTilt);
+            listenForTilt();
         } else {
             updateDebugStatus('Tilt: unavailable');
         }
