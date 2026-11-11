@@ -498,7 +498,7 @@
                 () => {
                     game.player.x = move.x;
                     game.player.y = move.y;
-                    game.player.direction = move.exitDirection;
+                    game.player.direction = game.lockedDirection ?? move.exitDirection;
                     rotateWaterAt(move.x, move.y);
                     game.playerPortalLock = move.portalLock;
                     updateEntities();
