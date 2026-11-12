@@ -708,6 +708,13 @@
             setPlayerDirection(direction);
         }
 
+        const activeAnimation = game.characterAnimations.player;
+        if (activeAnimation?.kind === 'move') {
+            const remaining = activeAnimation.duration
+                - (performance.now() - activeAnimation.start);
+            if (remaining > 0) return remaining;
+        }
+
         const moveDuration = getPlayerMoveDelay();
         const nextX = game.player.x + vector.x;
         const nextY = game.player.y + vector.y;
